@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pick'em Club: NFL picks with your friends</title>
+<meta name="description" content="Make a league, pick the winner of every NFL game each week, and see who's best by the end of the season.">
+<meta property="og:title" content="Pick'em Club">
+<meta property="og:description" content="Pick every NFL game with your friends. 1 point for a winner, 10 for calling a tie.">
+<meta property="og:image" content="/og.png">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pick'em Club">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117; --surface:#151b23; --surface2:#1c2430; --surface3:#232d3b; --line:#273243;
+  --text:#eef2f6; --text2:#c2ccd8; --muted:#8b99ab;
+  --turf:#2fc977; --turf2:#1f9e5b; --turfdim:rgba(47,201,119,.14);
+  --good:#2fc977; --bad:#ef5b5b; --baddim:rgba(239,91,91,.14);
+  --gold:#f5c044; --golddim:rgba(245,192,68,.15);
+  --s1:#3987e5; --s2:#d95926; --other:#3a4657;
+  --display:"Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --sans:"Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --r:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+html,body{margin:0}
+body{min-height:100vh;color:var(--text);font-family:var(--sans);font-size:16px;line-height:1.4;
+  background:
+    radial-gradient(900px 420px at 50% -180px, rgba(47,201,119,.13), transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 79px, rgba(255,255,255,.018) 79px 80px),
+    var(--bg);
+  padding:env(safe-area-inset-top) 0 calc(76px + env(safe-area-inset-bottom));
+}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0}
+a{color:var(--turf)}
+img{display:block}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}
+
+/* header */
+.top{position:sticky;top:0;z-index:20;background:rgba(13,17,23,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:12px;height:56px}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:.3px;text-transform:uppercase;text-decoration:none;color:var(--text);white-space:nowrap}
+.brand img{width:28px;height:28px;border-radius:7px}
+.brand span{color:var(--turf)}
+.lgsel{margin-left:auto;display:flex;align-items:center;gap:6px;max-width:55%;padding:7px 12px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);font-weight:600;font-size:14px}
+.lgsel b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lgsel svg{flex:none;opacity:.7}
+
+/* tab bar */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(17,22,29,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.tabs .wrap{display:flex;padding:0 4px}
+.tabs a{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0 8px;color:var(--muted);text-decoration:none;font-size:11.5px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+.tabs a.on{color:var(--turf)}
+.tabs svg{width:23px;height:23px}
+
+/* generic */
+h1,h2,h3{font-family:var(--display);text-transform:uppercase;letter-spacing:.4px;margin:0}
+h1{font-size:30px;font-weight:800;line-height:1.05}
+h2{font-size:21px;font-weight:700}
+h3{font-size:16px;font-weight:700;color:var(--text2)}
+.muted{color:var(--muted)}
+.small{font-size:13.5px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.stack>*+*{margin-top:12px}
+.sec{margin-top:22px}
+.sec>h2{margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:46px;padding:0 18px;border-radius:12px;font-weight:700;font-size:15.5px;background:var(--turf);color:#06200f;transition:transform .08s, filter .15s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.5}
+.btn.ghost{background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--bad);border:1px solid rgba(239,91,91,.4)}
+.btn.block{width:100%}
+.btn.sm{height:36px;padding:0 13px;font-size:14px;border-radius:10px}
+label.f{display:block;font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px;letter-spacing:.2px}
+input.in,select.in{width:100%;height:48px;padding:0 14px;border-radius:12px;background:var(--bg);border:1px solid var(--line);outline:none;font-size:16px}
+input.in:focus,select.in:focus{border-color:var(--turf);box-shadow:0 0 0 3px var(--turfdim)}
+.err{color:var(--bad);font-size:14px;min-height:0}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:12.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--surface3);color:var(--text2)}
+.pill.live{background:var(--baddim);color:#ff8a8a}
+.pill.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--bad);animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:var(--surface3);border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14.5px;z-index:50;transition:all .2s;max-width:90vw;text-align:center}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.bad{border-color:rgba(239,91,91,.5);color:#ffb0b0}
+.empty{text-align:center;padding:34px 18px}
+.empty .big{font-size:42px;margin-bottom:6px}
+.spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--turf);animation:sp 0.8s linear infinite;margin:60px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* auth */
+.hero{padding:34px 0 8px;text-align:center}
+.hero img{width:76px;height:76px;border-radius:18px;margin:0 auto 14px;box-shadow:0 10px 40px rgba(47,201,119,.25)}
+.hero h1{font-size:40px}
+.hero h1 span{color:var(--turf)}
+.hero p{color:var(--text2);margin:8px auto 0;max-width:420px}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:16px}
+.seg button{flex:1;height:38px;border-radius:9px;font-weight:700;color:var(--muted)}
+.seg button.on{background:var(--surface3);color:var(--text)}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.rules div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center}
+.rules b{display:block;font-family:var(--display);font-size:28px;font-weight:800;line-height:1}
+.rules span{font-size:12.5px;color:var(--muted)}
+.invite{background:var(--golddim);border:1px solid rgba(245,192,68,.35);color:var(--text);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:14.5px}
+
+/* week header */
+.wkbar{display:flex;align-items:center;gap:8px;margin:18px 0 12px}
+.wkbar h1{flex:1;text-align:center}
+.wkbar .sub{display:block;font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;color:var(--muted);margin-top:3px}
+.navbtn{width:42px;height:42px;border-radius:12px;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center}
+.navbtn:disabled{opacity:.3}
+.banner{display:flex;gap:12px;align-items:center;border-radius:var(--r);padding:12px 14px;margin-bottom:14px;border:1px solid var(--line);background:var(--surface)}
+.banner .ic{flex:none;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--surface3)}
+.banner.open{border-color:rgba(47,201,119,.35);background:linear-gradient(90deg,var(--turfdim),transparent)}
+.banner.open .ic{background:var(--turfdim);color:var(--turf)}
+.banner.lock .ic{color:var(--gold);background:var(--golddim)}
+.banner.done .ic{color:var(--turf);background:var(--turfdim)}
+.banner b{display:block}
+.banner .t{font-size:14px;color:var(--text2)}
+.cd{font-family:var(--display);font-weight:700;font-size:20px;color:var(--turf);margin-left:auto;white-space:nowrap}
+.progress{height:6px;border-radius:6px;background:var(--surface3);overflow:hidden;margin:4px 0 2px}
+.progress i{display:block;height:100%;background:var(--turf);border-radius:6px;transition:width .3s}
+
+/* games */
+.day{font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-size:15px;margin:18px 2px 8px}
+.game{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;margin-bottom:10px}
+.gmeta{display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--muted);padding:0 4px 8px}
+.gmeta .res{font-weight:700}
+.gmeta .res.ok{color:var(--good)} .gmeta .res.no{color:var(--bad)} .gmeta .res.tie{color:var(--gold)}
+.mrow{display:grid;grid-template-columns:1fr 54px 1fr;gap:8px;align-items:stretch}
+.team{position:relative;display:flex;align-items:center;gap:10px;padding:10px;border-radius:11px;background:var(--surface2);border:2px solid transparent;text-align:left;min-height:64px;transition:background .12s,border-color .12s,transform .08s}
+.team.home{flex-direction:row-reverse;text-align:right}
+.team:active:not(:disabled){transform:scale(.97)}
+.team img{width:38px;height:38px;object-fit:contain;flex:none}
+.team .nm{min-width:0;flex:1}
+.team .ab{font-family:var(--display);font-weight:800;font-size:22px;line-height:1;letter-spacing:.3px}
+.team .rec{font-size:12px;color:var(--muted);margin-top:2px}
+.team .sc{font-family:var(--display);font-weight:700;font-size:26px;color:var(--text2)}
+.team.win .sc{color:var(--text)}
+.team.lose{opacity:.62}
+.team.sel{border-color:var(--turf);background:var(--turfdim)}
+.team.sel::after{content:"";position:absolute;top:-7px;width:18px;height:18px;border-radius:50%;background:var(--turf) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2306200f' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5L20 7'/%3E%3C/svg%3E") center/12px no-repeat}
+.team.away.sel::after{left:-7px} .team.home.sel::after{right:-7px}
+.team.sel.no{border-color:var(--bad);background:var(--baddim)}
+.team.sel.no::after{background-color:var(--bad);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E")}
+.tie{display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:11px;background:var(--surface2);border:2px solid transparent;font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.5px;color:var(--muted)}
+.tie small{font-family:var(--sans);font-size:10.5px;font-weight:600;color:var(--muted);letter-spacing:0;margin-top:1px}
+.tie.sel{border-color:var(--gold);background:var(--golddim);color:var(--gold)}
+.tie.sel.no{border-color:var(--bad);background:var(--baddim);color:var(--bad)}
+.at{font-size:11px;color:var(--muted)}
+.game.locked .team:disabled,.game.locked .tie:disabled{cursor:default}
+.split{display:flex;height:5px;border-radius:5px;overflow:hidden;margin:10px 4px 2px;gap:2px;background:var(--surface)}
+.split i{display:block;height:100%}
+.splitlbl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:2px 4px 0}
+
+/* tables */
+.tbl{width:100%;border-collapse:collapse;font-size:15px}
+.tbl th{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:left;padding:8px 8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:11px 8px;border-bottom:1px solid var(--line)}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .n{text-align:right;font-variant-numeric:tabular-nums}
+.tbl .rk{width:34px;font-family:var(--display);font-weight:800;font-size:19px;color:var(--muted)}
+.tbl tr.me td{background:rgba(57,135,229,.08)}
+.tbl tr.click{cursor:pointer}
+.tbl .pts{font-family:var(--display);font-weight:800;font-size:21px}
+.medal1 .rk{color:var(--gold)}
+.you{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:1px 6px;border-radius:5px;background:rgba(57,135,229,.2);color:#8fbaf0;margin-left:6px;vertical-align:2px}
+.detail td{background:var(--surface2)!important;padding:14px!important}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.tile{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+.detail .tile{background:var(--surface)}
+.tile .k{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.tile .v{font-family:var(--display);font-weight:800;font-size:27px;line-height:1.1;margin-top:3px}
+.tile .s{font-size:12.5px;color:var(--text2)}
+.champ{text-align:center;padding:22px 16px;border-radius:var(--r);border:1px solid rgba(245,192,68,.4);background:radial-gradient(400px 160px at 50% 0, rgba(245,192,68,.22), transparent),var(--surface)}
+.champ .big{font-size:44px}
+.champ h1{color:var(--gold)}
+
+/* pick sheet */
+.sheet{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);-webkit-overflow-scrolling:touch}
+.sheet table{border-collapse:separate;border-spacing:0;font-size:13.5px;min-width:100%}
+.sheet th,.sheet td{padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:center}
+.sheet tr:last-child td{border-bottom:0}
+.sheet th{font-size:12px;font-weight:700;color:var(--text2);position:sticky;top:0;background:var(--surface2)}
+.sheet .g{position:sticky;left:0;background:var(--surface);text-align:left;z-index:1;border-right:1px solid var(--line);font-weight:600}
+.sheet th.g{background:var(--surface2);z-index:2}
+.sheet .g small{display:block;color:var(--muted);font-weight:500;font-size:11.5px}
+.sheet td.c{font-family:var(--display);font-weight:700;font-size:15px}
+.sheet td.ok{color:var(--good);background:rgba(47,201,119,.07)}
+.sheet td.no{color:#ff8f8f}
+.sheet td.th{color:var(--gold);background:var(--golddim)}
+.sheet td.none{color:var(--muted)}
+.sheet tr.tot td{font-family:var(--display);font-weight:800;font-size:18px;background:var(--surface2)}
+.sheet tr.tot td.g{background:var(--surface2)}
+
+/* chart */
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .tip{position:absolute;pointer-events:none;background:var(--surface3);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;min-width:140px;box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;transition:opacity .1s;z-index:3}
+.chart .tip b{display:block;margin-bottom:4px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.chart .tip div{display:flex;justify-content:space-between;gap:14px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--text2);margin-bottom:8px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+
+/* leagues list */
+.lg{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text)}
+.lg .badge{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:20px;background:var(--turfdim);color:var(--turf);flex:none}
+.lg .nm{font-weight:700;font-size:17px}
+.code{font-family:var(--display);font-weight:800;font-size:40px;letter-spacing:6px;text-align:center;padding:6px 0;color:var(--gold)}
+.mem{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.mem:last-child{border-bottom:0}
+.av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;background:var(--surface3);color:var(--text2);flex:none}
+.mem .nm{flex:1;min-width:0}
+.mem .nm small{display:block;color:var(--muted);font-size:12.5px}
+.status{font-size:13px;font-weight:600}
+.status.ok{color:var(--good)}
+.status.part{color:var(--gold)}
+.status.none{color:var(--muted)}
+dialog{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:18px;padding:20px;max-width:380px;width:calc(100% - 32px)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:15px}
+.kv:last-child{border-bottom:0}
+ul.rl{margin:6px 0 0;padding-left:18px;color:var(--text2)} ul.rl li{margin:5px 0}
+</style>
+</head>
+<body>
+<div id="app"><div class="spin"></div></div>
+<div class="toast" id="toast"></div>
+<dialog id="dlg"></dialog>
+<script>
+"use strict";
+// ---------- tiny helpers ----------
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const initials = n => String(n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+const pct = x => x == null ? '—' : (x * 100).toFixed(x === 1 || x === 0 ? 0 : 1) + '%';
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+let toastT;
+function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = 'toast on' + (bad ? ' bad' : ''); clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', 2600); }
+async function api(path, data) {
+  const opt = data === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) };
+  const r = await fetch('/api/' + path, { credentials: 'same-origin', ...opt });
+  let j = {}; try { j = await r.json(); } catch {}
+  if (!r.ok) { const e = new Error(j.error || 'Something went wrong (' + r.status + ')'); e.status = r.status; throw e; }
+  return j;
+}
+const fmtDay = ms => new Date(ms).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+const fmtTime = ms => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+const fmtWhen = ms => new Date(ms).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+function countdown(ms) {
+  let s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400); s -= d * 86400; const h = Math.floor(s / 3600); s -= h * 3600; const m = Math.floor(s / 60); s -= m * 60;
+  if (d) return `${d}d ${h}h`; if (h) return `${h}h ${m}m`; return `${m}m ${String(s).padStart(2, '0')}s`;
+}
+const ICON = {
+  picks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9.5" ry="6" transform="rotate(-35 12 12)"/><path d="M9.5 14.5l5-5M10.5 11l2.5 2.5M12 9.5l2.5 2.5"/></svg>',
+  results: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M15 9v11"/></svg>',
+  standings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM7 6H4v1a3 3 0 003 3M17 6h3v1a3 3 0 01-3 3"/></svg>',
+  league: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.4.2 4.3 1.8 4.8 4.8"/></svg>',
+  left: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  right: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>',
+  clock: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  lock: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>',
+  check: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>',
+};
+
+// ---------- state & routing ----------
+const S = { me: null, leagues: [], current: null, startOptions: [], week: null, league: null, tick: null, poll: null };
+const pendingJoin = () => sessionStorage.getItem('join');
+(function captureJoin() {
+  const p = new URLSearchParams(location.search), c = p.get('join');
+  if (c) { sessionStorage.setItem('join', c.toUpperCase()); history.replaceState(null, '', '/' + location.hash); }
+})();
+
+function route() {
+  const h = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  return { h0: h[0] || '', id: +h[1] || 0, tab: h[2] || 'picks', key: h[3] || '' };
+}
+function go(hash) { if (location.hash === hash) render(); else location.hash = hash; }
+window.addEventListener('hashchange', render);
+
+async function boot() {
+  try {
+    const me = await api('me');
+    Object.assign(S, { me: me.user, leagues: me.leagues || [], current: me.current, startOptions: me.startOptions || [] });
+  } catch (e) { S.me = null; }
+  render();
+}
+
+function clearTimers() { clearInterval(S.tick); clearInterval(S.poll); S.tick = S.poll = null; }
+
+async function render() {
+  clearTimers();
+  const app = $('#app');
+  if (!S.me) return renderAuth(app);
+  const r = route();
+  if (r.h0 === 'l' && r.id) {
+    const lg = S.leagues.find(l => l.id === r.id);
+    if (!lg) { go('#/'); return; }
+    store.set('lastLeague', r.id);
+    app.innerHTML = shell(lg, r.tab) + '<main class="wrap" id="main"><div class="spin"></div></main>';
+    const main = $('#main');
+    try {
+      if (r.tab === 'picks') await renderPicks(main, lg, r.key);
+      else if (r.tab === 'results') await renderResults(main, lg, r.key);
+      else if (r.tab === 'standings') await renderStandings(main, lg);
+      else if (r.tab === 'league') await renderLeague(main, lg);
+      else go(`#/l/${lg.id}/picks`);
+    } catch (e) { if (e.status === 401) { S.me = null; return render(); } main.innerHTML = `<div class="card empty sec"><div class="big">🏈</div><b>${esc(e.message)}</b><p><button class="btn ghost sm" onclick="render()">Try again</button></p></div>`; }
+    return;
+  }
+  if (r.h0 === 'account') return renderAccount(app);
+  // home: jump straight into the last league unless there's an invite to handle
+  const last = +store.get('lastLeague');
+  if (!r.h0 && !pendingJoin() && S.leagues.length && !S._stayHome) {
+    const lg = S.leagues.find(l => l.id === last) || S.leagues[0];
+    return go(`#/l/${lg.id}/picks`);
+  }
+  S._stayHome = false;
+  renderHome(app);
+}
+
+function shell(lg, tab) {
+  const t = (k, label) => `<a href="#/l/${lg.id}/${k}" class="${tab === k ? 'on' : ''}">${ICON[k]}${label}</a>`;
+  return `<header class="top"><div class="wrap">
+      <a class="brand" href="#/l/${lg.id}/picks"><img src="/icon-192.png" alt="">Pick'em<span>Club</span></a>
+      <button class="lgsel" onclick="S._stayHome=true;go('#/home')" aria-label="Switch league"><b>${esc(lg.name)}</b>${ICON.down}</button>
+    </div></header>
+    <nav class="tabs"><div class="wrap">${t('picks', 'Picks')}${t('results', 'Results')}${t('standings', 'Standings')}${t('league', 'League')}</div></nav>`;
+}
+
+// ---------- auth ----------
+async function renderAuth(app, mode = 'login') {
+  let inviteHtml = '';
+  const code = pendingJoin();
+  if (code) {
+    try { const p = await api('leagues/preview?code=' + encodeURIComponent(code)); inviteHtml = `<div class="invite">🏈 <b>${esc(p.league.owner)}</b> invited you to <b>${esc(p.league.name)}</b>. Sign in or create an account to join.</div>`; if (mode === 'login' && !S._authTouched) mode = 'signup'; }
+    catch { sessionStorage.removeItem('join'); }
+  }
+  app.innerHTML = `<main class="wrap" style="max-width:440px">
+    <div class="hero"><img src="/icon-512.png" alt=""><h1>Pick'em <span>Club</span></h1><p>Pick every NFL game with your friends. Picks stay secret until the week is over.</p></div>
+    <div class="rules"><div><b>1</b><span>point for picking the winner</span></div><div><b>0</b><span>for a wrong pick</span></div><div><b style="color:var(--gold)">10</b><span>if you call a tie</span></div></div>
+    <div class="card sec">${inviteHtml}
+      <div class="seg"><button class="${mode === 'login' ? 'on' : ''}" data-m="login">Sign in</button><button class="${mode === 'signup' ? 'on' : ''}" data-m="signup">Create account</button></div>
+      <form id="af" class="stack" autocomplete="on">
+        ${mode === 'signup' ? `<div><label class="f" for="dn">Your name (what friends see)</label><input class="in" id="dn" name="display" maxlength="24" placeholder="e.g. Nathan W." required></div>` : ''}
+        <div><label class="f" for="un">Username</label><input class="in" id="un" name="username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" required></div>
+        <div><label class="f" for="pw">Password</label><input class="in" id="pw" name="password" type="password" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" required minlength="6"></div>
+        <div class="err" id="aerr"></div>
+        <button class="btn block" type="submit">${mode === 'signup' ? 'Create account' : 'Sign in'}</button>
+        ${mode === 'login' ? `<p class="small muted" style="text-align:center;margin:4px 0 0">Forgot your password? Ask your league's commissioner to reset it.</p>` : ''}
+      </form>
+    </div></main>`;
+  app.querySelectorAll('.seg button').forEach(b => b.onclick = () => { S._authTouched = true; renderAuth(app, b.dataset.m); });
+  $('#af').onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; $('#aerr').textContent = '';
+    try { await api(mode === 'signup' ? 'signup' : 'login', f); await boot(); }
+    catch (er) { $('#aerr').textContent = er.message; btn.disabled = false; }
+  };
+}
+
+// ---------- home: leagues ----------
+async function renderHome(app) {
+  const code = pendingJoin();
+  let joinCard = '';
+  if (code) {
+    try {
+      const p = await api('leagues/preview?code=' + encodeURIComponent(code));
+      const already = S.leagues.find(l => l.id === p.league.id);
+      if (already) { sessionStorage.removeItem('join'); return go(`#/l/${already.id}/picks`); }
+      joinCard = `<div class="card" style="border-color:rgba(245,192,68,.4)"><h2>You're invited</h2><p class="muted" style="margin:6px 0 14px"><b style="color:var(--text)">${esc(p.league.owner)}</b> invited you to <b style="color:var(--text)">${esc(p.league.name)}</b> (${p.league.size} player${p.league.size === 1 ? '' : 's'}).</p>
+        <div class="row"><button class="btn" id="acc">Join league</button><button class="btn ghost" id="dec">No thanks</button></div></div>`;
+    } catch { sessionStorage.removeItem('join'); }
+  }
+  const opts = S.startOptions.map((w, i) => `<option value="${w.key}">${esc(w.label)}${i === 0 ? ' (next up)' : ''}</option>`).join('');
+  app.innerHTML = `<header class="top"><div class="wrap"><a class="brand" href="#/home"><img src="/icon-192.png" alt="">Pick'em<span>Club</span></a>
+      <a class="lgsel" href="#/account" style="text-decoration:none;color:var(--text)"><b>${esc(S.me.display)}</b></a></div></header>
+    <main class="wrap">
+      <div class="sec">${joinCard}</div>
+      <section class="sec"><h2>Your leagues</h2>
+        ${S.leagues.length ? `<div class="card" style="padding:4px 16px">${S.leagues.map(l => `<a class="lg mem" href="#/l/${l.id}/picks"><div class="badge">${esc(initials(l.name))}</div><div class="nm" style="flex:1"><div class="nm">${esc(l.name)}</div><small>${l.size} player${l.size === 1 ? '' : 's'} · ${l.season} season${l.owner_id === S.me.id ? ' · Commissioner' : ''}</small></div>${ICON.right}</a>`).join('')}</div>`
+        : `<div class="card empty"><div class="big">🏈</div><b>You're not in a league yet.</b><p class="muted small">Start one and invite your friends, or join with a code someone sent you.</p></div>`}
+      </section>
+      <section class="sec"><h2>Start a league</h2>
+        <form class="card stack" id="cf">
+          <div><label class="f" for="ln">League name</label><input class="in" id="ln" name="name" maxlength="40" placeholder="e.g. Sunday Squad" required></div>
+          <div><label class="f" for="sk">First week that counts</label><select class="in" id="sk" name="startKey">${opts}</select></div>
+          <div class="err" id="cerr"></div>
+          <button class="btn block">Create league</button>
+        </form>
+      </section>
+      <section class="sec"><h2>Join a league</h2>
+        <form class="card stack" id="jf">
+          <div><label class="f" for="jc">Invite code</label><input class="in" id="jc" name="code" maxlength="8" placeholder="6-letter code" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:3px;font-weight:700" required></div>
+          <div class="err" id="jerr"></div>
+          <button class="btn ghost block">Join</button>
+        </form>
+      </section>
+      <p class="sec small muted" style="text-align:center"><a href="#/account">Account &amp; sign out</a></p>
+    </main>`;
+  if (code && $('#acc')) {
+    $('#acc').onclick = async () => { try { const r = await api('leagues/join', { code }); sessionStorage.removeItem('join'); await boot(); go(`#/l/${r.id}/picks`); } catch (e) { toast(e.message, 1); } };
+    $('#dec').onclick = () => { sessionStorage.removeItem('join'); S._stayHome = true; render(); };
+  }
+  $('#cf').onsubmit = async e => {
+    e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    try { const r = await api('leagues', f); await boot(); go(`#/l/${r.id}/league`); toast('League created! Share the invite code.'); }
+    catch (er) { $('#cerr').textContent = er.message; }
+  };
+  $('#jf').onsubmit = async e => {
+    e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    try { const r = await api('leagues/join', f); await boot(); go(`#/l/${r.id}/picks`); toast('You joined the league!'); }
+    catch (er) { $('#jerr').textContent = er.message; }
+  };
+}
+
+// ---------- picks ----------
+function weekBar(lg, w, tab) {
+  const sub = w.gameCount ? `${w.gameCount} games${w.current ? ' · this week' : ''}` : 'Schedule not out yet';
+  return `<div class="wkbar">
+    <button class="navbtn" ${w.prev ? `onclick="go('#/l/${lg.id}/${tab}/${w.prev}')"` : 'disabled'} aria-label="Previous week">${ICON.left}</button>
+    <h1>${esc(w.label)}<span class="sub">${w.season} season · ${sub}</span></h1>
+    <button class="navbtn" ${w.next ? `onclick="go('#/l/${lg.id}/${tab}/${w.next}')"` : 'disabled'} aria-label="Next week">${ICON.right}</button>
+  </div>`;
+}
+function teamBtn(g, side, pick, locked) {
+  const t = g[side], other = g[side === 'home' ? 'away' : 'home'];
+  const done = g.completed, sel = pick === t.id;
+  const cls = ['team', side];
+  if (sel) cls.push('sel');
+  if (sel && done) cls.push(g.winner === t.id ? 'ok' : 'no');
+  if (done && g.winner && g.winner !== 'TIE') cls.push(g.winner === t.id ? 'win' : 'lose');
+  const showScore = g.state !== 'pre' && t.score != null;
+  const tbd = !t.id || t.abbr === 'TBD';
+  return `<button class="${cls.join(' ')}" data-g="${g.id}" data-p="${esc(t.id)}" ${locked || tbd ? 'disabled' : ''} aria-pressed="${sel}" aria-label="${esc(t.name)}">
+    ${t.logo ? `<img src="${esc(t.logo)}" alt="" loading="lazy">` : ''}
+    <div class="nm"><div class="ab">${esc(t.abbr)}</div><div class="rec">${esc(t.record || (side === 'home' ? 'Home' : 'Away'))}</div></div>
+    ${showScore ? `<div class="sc">${t.score}</div>` : ''}
+  </button>`;
+}
+function resultTag(g, pick) {
+  if (!g.completed) return '';
+  if (!pick) return `<span class="res muted">No pick</span>`;
+  if (pick === g.winner) return g.winner === 'TIE' ? `<span class="res tie">Called the tie! +10</span>` : `<span class="res ok">Correct +1</span>`;
+  return `<span class="res no">Wrong +0</span>`;
+}
+function statusPill(g) {
+  if (g.state === 'in') return `<span class="pill live">${esc(g.detail || 'Live')}</span>`;
+  if (g.state === 'post') return `<span>${esc(g.detail || 'Final')}</span>`;
+  return `<span>${fmtTime(g.kickoff)}</span>`;
+}
+function gameCard(g, pick, locked, split) {
+  const tieSel = pick === 'TIE';
+  const tieCls = 'tie' + (tieSel ? ' sel' : '') + (tieSel && g.completed && g.winner !== 'TIE' ? ' no' : '');
+  let sp = '';
+  if (split) {
+    const n = split.home + split.away + split.tie;
+    if (n) {
+      const seg = (v, c) => v ? `<i style="width:${v / n * 100}%;background:${c}"></i>` : '';
+      sp = `<div class="split" aria-hidden="true">${seg(split.away, '#8b99ab')}${seg(split.tie, 'var(--gold)')}${seg(split.home, '#4d5b6e')}</div>
+        <div class="splitlbl"><span>${split.away} picked ${esc(g.away.abbr)}</span>${split.tie ? `<span style="color:var(--gold)">${split.tie} tie</span>` : ''}<span>${split.home} picked ${esc(g.home.abbr)}</span></div>`;
+    }
+  }
+  return `<div class="game ${locked ? 'locked' : ''}">
+    <div class="gmeta">${statusPill(g)}${resultTag(g, pick) || `<span class="at">${esc(g.away.abbr)} @ ${esc(g.home.abbr)}</span>`}</div>
+    <div class="mrow">${teamBtn(g, 'away', pick, locked)}
+      <button class="${tieCls}" data-g="${g.id}" data-p="TIE" ${locked ? 'disabled' : ''} aria-pressed="${tieSel}" aria-label="Pick a tie">TIE<small>+10</small></button>
+      ${teamBtn(g, 'home', pick, locked)}</div>${sp}
+  </div>`;
+}
+function groupByDay(games) {
+  const out = []; let cur = null;
+  games.forEach(g => { const d = fmtDay(g.kickoff); if (!cur || cur.d !== d) out.push(cur = { d, games: [] }); cur.games.push(g); });
+  return out;
+}
+async function renderPicks(main, lg, key) {
+  const d = await api(`week?league=${lg.id}${key ? '&key=' + encodeURIComponent(key) : ''}`);
+  S.week = d;
+  const w = d.week;
+  const draw = () => {
+    const picked = d.games.filter(g => d.myPicks[g.id]).length, total = d.games.length;
+    const lockedNow = w.locked || (w.firstKick && Date.now() >= w.firstKick);
+    let banner;
+    if (!total) banner = `<div class="banner"><div class="ic">${ICON.clock}</div><div><b>No games yet</b><div class="t">The schedule for this week isn't out yet. Check back later.</div></div></div>`;
+    else if (!lockedNow) banner = `<div class="banner open"><div class="ic">${ICON.clock}</div><div style="flex:1;min-width:0"><b>${picked} of ${total} picked</b><div class="t">Picks lock ${fmtWhen(w.firstKick)}</div><div class="progress"><i style="width:${total ? picked / total * 100 : 0}%"></i></div></div><div class="cd" id="cd">${countdown(w.firstKick - Date.now())}</div></div>`;
+    else if (!w.final) banner = `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are locked · you picked ${picked} of ${total}</b><div class="t">Everyone's picks are revealed once the last game is final. Your points so far: <b style="display:inline;color:var(--text)">${d.myPoints}</b></div></div></div>`;
+    else banner = `<div class="banner done"><div class="ic">${ICON.check}</div><div style="flex:1"><b>Week final · you scored ${d.myPoints} point${d.myPoints === 1 ? '' : 's'}</b><div class="t">See how everyone did on the Results tab.</div></div><a class="btn sm" href="#/l/${lg.id}/results/${w.key}">Results</a></div>`;
+    const counted = d.league && !d.league.counted ? `<p class="small muted" style="margin:-4px 2px 12px">This week is before ${esc(lg.name)} started, so it doesn't count toward the standings.</p>` : '';
+    const split = d.league?.split || {};
+    main.innerHTML = weekBar(lg, w, 'picks') + banner + counted +
+      groupByDay(d.games).map(gr => `<div class="day">${esc(gr.d)}</div>` + gr.games.map(g => gameCard(g, d.myPicks[g.id], lockedNow, split[g.id])).join('')).join('') +
+      (total && !lockedNow ? `<p class="small muted" style="text-align:center;margin:18px 0">Picks save as you tap. Tap a pick again to clear it.</p>` : '');
+  };
+  draw();
+  main.onclick = async e => {
+    const b = e.target.closest('button[data-g]'); if (!b || b.disabled) return;
+    const gid = b.dataset.g, prev = d.myPicks[gid] || null;
+    const next = prev === b.dataset.p ? null : b.dataset.p;
+    if (next) d.myPicks[gid] = next; else delete d.myPicks[gid];
+    draw();
+    try { await api('picks', { gameId: gid, pick: next }); if (navigator.vibrate) navigator.vibrate(8); }
+    catch (er) { if (prev) d.myPicks[gid] = prev; else delete d.myPicks[gid]; if (er.status === 409) { w.locked = true; } draw(); toast(er.message, 1); }
+  };
+  if (d.games.length && !w.locked && w.firstKick) {
+    S.tick = setInterval(() => { const cd = $('#cd'); if (!cd) return; const left = w.firstKick - Date.now(); if (left <= 0) { render(); } else cd.textContent = countdown(left); }, 1000);
+  }
+  if (d.games.some(g => g.state === 'in') || (w.locked && !w.final && d.games.some(g => g.state === 'pre' && g.kickoff - Date.now() < 15 * 60000))) {
+    S.poll = setInterval(async () => { if (document.hidden) return; try { const n = await api(`week?league=${lg.id}&key=${w.key}`); Object.assign(d, n); d.myPicks = n.myPicks; draw(); } catch {} }, 60000);
+  }
+}
+
+// ---------- results ----------
+async function renderResults(main, lg, key) {
+  const d = await api(`week?league=${lg.id}${key ? '&key=' + encodeURIComponent(key) : ''}`);
+  const w = d.week, L = d.league;
+  let html = weekBar(lg, w, 'results');
+  if (!L) { main.innerHTML = html + `<div class="card empty">League not found.</div>`; return; }
+  if (L && !L.counted) html += `<p class="small muted" style="margin:-4px 2px 12px">This week is before ${esc(lg.name)} started, so it doesn't count toward the standings.</p>`;
+  if (!d.games.length) { main.innerHTML = html + `<div class="card empty"><div class="big">📅</div><b>No games scheduled yet.</b></div>`; return; }
+  if (!L.reveal) {
+    const total = d.games.length;
+    html += `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are hidden until the week is over</b><div class="t">${w.locked ? 'Picks are locked.' : `Picks lock ${fmtWhen(w.firstKick)}.`} Once every game is final, you'll see everyone's picks and scores here.</div></div></div>`;
+    html += `<section class="sec"><h2>Who's in</h2><div class="card" style="padding:4px 16px">${L.players.map(p => {
+      const st = p.picked >= total ? `<span class="status ok">✓ All ${total} picked</span>` : p.picked ? `<span class="status part">${p.picked} of ${total}</span>` : `<span class="status none">${w.locked ? 'No picks' : 'Not yet'}</span>`;
+      return `<div class="mem"><div class="av">${esc(initials(p.display))}</div><div class="nm"><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</div>${st}</div>`;
+    }).join('')}</div></section>`;
+    if (w.locked) html += `<p class="small muted" style="text-align:center">Your points so far this week: <b style="color:var(--text)">${d.myPoints}</b></p>`;
+    main.innerHTML = html; return;
+  }
+  // final: leaderboard + pick sheet
+  const P = L.players;
+  html += `<section class="sec"><h2>Week leaderboard</h2><div class="card" style="padding:4px 8px"><table class="tbl"><thead><tr><th></th><th>Player</th><th class="n">Right</th><th class="n">Pts</th></tr></thead><tbody>${P.map(p =>
+    `<tr class="${p.id === S.me.id ? 'me' : ''} ${p.rank === 1 && p.points > 0 ? 'medal1' : ''}"><td class="rk">${p.rank === 1 && p.points > 0 ? '🏆' : p.rank}</td><td><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}${p.picked ? '' : '<div class="small muted">No picks</div>'}</td><td class="n">${p.correct}–${p.wrong}</td><td class="n pts">${p.points}</td></tr>`).join('')}</tbody></table></div></section>`;
+  // lone wolves: the only player to get a game right
+  const lone = [];
+  d.games.forEach(g => { if (!g.completed) return; const right = P.filter(p => p.picks[g.id] === g.winner); if (right.length === 1 && P.length > 2) lone[g.winner === 'TIE' ? 'unshift' : 'push'](`<b>${esc(right[0].display)}</b> was the only one to get ${g.winner === 'TIE' ? `the ${esc(g.away.abbr)}–${esc(g.home.abbr)} tie` : esc(g.winner === g.home.id ? g.home.abbr : g.away.abbr) + ' over ' + esc(g.winner === g.home.id ? g.away.abbr : g.home.abbr)}`); });
+  const nobody = d.games.filter(g => g.completed && P.length > 1 && !P.some(p => p.picks[g.id] === g.winner));
+  lone.splice(Math.max(0, 4 - Math.min(nobody.length, 2)));
+  nobody.splice(2);
+  if (lone.length || nobody.length) html += `<section class="sec"><h2>Week highlights</h2><div class="card small" style="padding:6px 16px">${lone.map(t => `<div class="kv"><span>🐺 ${t}</span></div>`).join('')}${nobody.map(g => `<div class="kv"><span>😬 Nobody saw ${g.winner === 'TIE' ? `the ${esc(g.away.abbr)}–${esc(g.home.abbr)} tie` : `${esc(g.winner === g.home.id ? g.home.abbr : g.away.abbr)} beating ${esc(g.winner === g.home.id ? g.away.abbr : g.home.abbr)}`} coming</span></div>`).join('')}</div></section>`;
+  const cell = (p, g) => {
+    const v = p.picks[g.id];
+    if (!v) return `<td class="c none">—</td>`;
+    const ab = v === 'TIE' ? 'TIE' : v === g.home.id ? g.home.abbr : g.away.abbr;
+    if (!g.completed) return `<td class="c none">${esc(ab)}</td>`;
+    const cls = v === g.winner ? (v === 'TIE' ? 'th' : 'ok') : 'no';
+    return `<td class="c ${cls}" title="${cls === 'no' ? 'Wrong' : 'Right'}">${esc(ab)}${cls === 'no' ? '' : ' ✓'}</td>`;
+  };
+  html += `<section class="sec"><h2>Everyone's picks</h2><div class="sheet"><table><thead><tr><th class="g">Game</th>${P.map(p => `<th>${esc(p.display.split(' ')[0])}</th>`).join('')}</tr></thead><tbody>
+    ${d.games.map(g => `<tr><td class="g">${esc(g.away.abbr)} ${g.away.score ?? ''} @ ${esc(g.home.abbr)} ${g.home.score ?? ''}<small>${g.completed ? (g.winner === 'TIE' ? 'Tie' : (g.winner === g.home.id ? g.home.abbr : g.away.abbr) + ' won') : esc(g.detail || '')}</small></td>${P.map(p => cell(p, g)).join('')}</tr>`).join('')}
+    <tr class="tot"><td class="g">Points</td>${P.map(p => `<td>${p.points}</td>`).join('')}</tr></tbody></table></div>
+    <p class="small muted">✓ = right pick. Swipe sideways if your league has lots of players.</p></section>`;
+  main.innerHTML = html;
+}
+
+// ---------- standings ----------
+async function renderStandings(main, lg) {
+  const d = await api('leagues/' + lg.id);
+  S.league = d;
+  const st = d.standings, P = st.players;
+  let html = `<div class="wkbar"><h1>Season standings<span class="sub">${d.league.season} season · counting from ${esc(d.league.start?.label || 'Week 1')}</span></h1></div>`;
+  if (st.champion) html += `<div class="champ"><div class="big">🏆</div><h1>${st.champion.map(esc).join(' & ')}</h1><p class="muted" style="margin:4px 0 0">${d.league.season} ${esc(d.league.name)} champion${st.champion.length > 1 ? 's' : ''}</p></div>`;
+  if (!st.weeks.length) {
+    main.innerHTML = html + `<div class="card empty"><div class="big">📊</div><b>No weeks are final yet.</b><p class="muted small">Standings fill in once ${esc(d.league.start?.label || 'the first week')} is over. Picks stay secret until then.</p></div>`;
+    return;
+  }
+  const me = P.find(p => p.id === S.me.id);
+  if (me) {
+    html += `<div class="tiles" style="margin-bottom:6px">
+      <div class="tile"><div class="k">Your rank</div><div class="v">${me.rank}<span class="muted" style="font-size:17px"> of ${P.length}</span></div></div>
+      <div class="tile"><div class="k">Points</div><div class="v">${me.points}</div><div class="s">${P[0].id === me.id ? (P[1] ? `+${me.points - P[1].points} ahead` : 'Leading') : `${P[0].points - me.points} behind 1st`}</div></div>
+      <div class="tile"><div class="k">Pick accuracy</div><div class="v">${pct(me.pct)}</div><div class="s">${me.correct}–${me.wrong}</div></div>
+      <div class="tile"><div class="k">Weeks won</div><div class="v">${me.weeksWon}</div><div class="s">of ${st.weeks.length}</div></div></div>`;
+  }
+  html += `<section class="sec"><h2>Leaderboard</h2><div class="card" style="padding:4px 8px"><table class="tbl" id="lb"><thead><tr><th></th><th>Player</th><th class="n">W–L</th><th class="n">%</th><th class="n">Pts</th></tr></thead><tbody>${P.map(p =>
+    `<tr class="click ${p.id === S.me.id ? 'me' : ''} ${p.rank === 1 ? 'medal1' : ''}" data-id="${p.id}"><td class="rk">${p.rank}</td><td><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</td><td class="n">${p.correct}–${p.wrong}</td><td class="n">${pct(p.pct)}</td><td class="n pts">${p.points}</td></tr>`).join('')}</tbody></table></div>
+    <p class="small muted">Tap a player for their full stats. Ties in points are broken by pick accuracy.</p></section>`;
+  html += `<section class="sec"><h2>Points over the season</h2><div class="card"><div id="chart"></div></div></section>`;
+  // league leaders
+  const best = (f, fmt, minOk = () => true) => { const c = P.filter(minOk); if (!c.length) return null; const top = Math.max(...c.map(f)); const who = c.filter(p => f(p) === top); return { v: fmt(top), who: who.map(p => p.display).join(', ') }; };
+  const L = [
+    ['Best accuracy', best(p => p.pct ?? -1, pct, p => p.correct + p.wrong > 0)],
+    ['Most weeks won', best(p => p.weeksWon, v => v)],
+    ['Best single week', best(p => p.best?.points ?? 0, v => v + ' pts')],
+    ['Longest streak', best(p => p.longest, v => v + ' right')],
+    ['Ties called', best(p => p.tiesHit, v => v)],
+  ].filter(x => x[1]);
+  html += `<section class="sec"><h2>League leaders</h2><div class="tiles">${L.map(([k, b]) => `<div class="tile"><div class="k">${k}</div><div class="v">${b.v}</div><div class="s">${esc(b.who)}</div></div>`).join('')}</div></section>`;
+  html += `<section class="sec"><h2>Weekly winners</h2><div class="card" style="padding:4px 16px">${st.weekWinners.slice().reverse().map(x => `<a class="kv" style="text-decoration:none;color:var(--text)" href="#/l/${lg.id}/results/${x.key}"><span>${esc(x.label)}</span><span>${x.names.length ? `<b>${x.names.map(esc).join(', ')}</b> <span class="muted">· ${x.points} pts</span>` : '<span class="muted">—</span>'}</span></a>`).join('')}</div></section>`;
+  main.innerHTML = html;
+  drawChart($('#chart'), st, P);
+  $('#lb').onclick = e => {
+    const tr = e.target.closest('tr[data-id]'); if (!tr) return;
+    const open = tr.nextElementSibling?.classList.contains('detail');
+    main.querySelectorAll('tr.detail').forEach(x => x.remove());
+    if (open) return;
+    const p = P.find(x => x.id === +tr.dataset.id);
+    const t = (k, v, s = '') => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+    tr.insertAdjacentHTML('afterend', `<tr class="detail"><td colspan="5"><div class="tiles">
+      ${t('Points', p.points, `${p.avg.toFixed(1)} per week`)}
+      ${t('Correct', pct(p.pct), `${p.correct} right, ${p.wrong} wrong`)}
+      ${t('Weeks won', p.weeksWon, `of ${st.weeks.length}`)}
+      ${t('Best week', p.best ? p.best.points : '—', p.best ? esc(p.best.label) : '')}
+      ${t('Longest streak', p.longest, `current: ${p.streak}`)}
+      ${t('Ties called', p.tiesHit, `${p.tiePicks} tie pick${p.tiePicks === 1 ? '' : 's'}`)}
+      ${t('Missed picks', p.missed)}
+      ${t('Picked home team', pct(p.homePct))}
+      ${t('Picked most', p.favTeam ? esc(p.favTeam.abbr) : '—', p.favTeam ? `${p.favTeam.count} times` : '')}
+    </div></td></tr>`);
+  };
+}
+
+// cumulative points line chart: you (blue) and the leader (orange) highlighted, everyone else muted
+function drawChart(el, st, P) {
+  const weeks = st.weeks, n = weeks.length;
+  const series = P.map(p => { let c = 0; return { p, vals: p.weekly.map(v => (c += v)) }; });
+  const me = series.find(s => s.p.id === S.me.id), lead = series[0];
+  const maxV = Math.max(1, ...series.map(s => s.vals[n - 1] || 0));
+  const W = Math.max(300, Math.min(680, el.clientWidth || 340)), H = Math.round(Math.min(280, Math.max(200, W * 0.6))), m = { l: 30, r: 52, t: 12, b: 26 };
+  const x = i => m.l + (n === 1 ? (W - m.l - m.r) / 2 : i * (W - m.l - m.r) / (n - 1));
+  const y = v => H - m.b - v / maxV * (H - m.t - m.b);
+  const step = Math.pow(10, Math.floor(Math.log10(maxV))) || 1;
+  const tickStep = [1, 2, 5, 10].map(k => k * step).find(s => maxV / s <= 5) || step * 10;
+  let grid = ''; for (let v = 0; v <= maxV; v += tickStep) grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="#273243" stroke-width="1"/><text x="${m.l - 8}" y="${y(v) + 4}" fill="#8b99ab" font-size="12" text-anchor="end">${v}</text>`;
+  const every = Math.ceil(n / Math.max(2, Math.floor((W - m.l - m.r) / 42)));
+  const xl = weeks.map((w, i) => i % every === 0 || i === n - 1 ? `<text x="${x(i)}" y="${H - 8}" fill="#8b99ab" font-size="12" text-anchor="middle">${esc(w.short)}</text>` : '').join('');
+  const path = s => s.vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const hi = [lead, me].filter((s, i, a) => s && a.indexOf(s) === i);
+  const colorOf = s => s === me ? 'var(--s1)' : 'var(--s2)';
+  const others = series.filter(s => !hi.includes(s)).map(s => `<path d="${path(s)}" fill="none" stroke="var(--other)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
+  const lines = hi.slice().reverse().map(s => `<path d="${path(s)}" fill="none" stroke="${colorOf(s)}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x(n - 1)}" cy="${y(s.vals[n - 1])}" r="4.5" fill="${colorOf(s)}" stroke="var(--surface)" stroke-width="2"/>`).join('');
+  // direct labels at the line ends, nudged apart if they collide
+  const lbl = hi.map(s => ({ s, yy: y(s.vals[n - 1]) })).sort((a, b) => a.yy - b.yy);
+  for (let i = 1; i < lbl.length; i++) if (lbl[i].yy - lbl[i - 1].yy < 15) lbl[i].yy = lbl[i - 1].yy + 15;
+  const labels = lbl.map(o => `<text x="${x(n - 1) + 9}" y="${o.yy + 4}" fill="#eef2f6" font-size="12.5" font-weight="600">${esc(o.s === me ? 'You' : o.s.p.display.split(' ')[0])}</text>`).join('');
+  const legend = `<div class="legend">${me ? `<span><i style="background:var(--s1)"></i>You</span>` : ''}${lead !== me ? `<span><i style="background:var(--s2)"></i>Leader (${esc(lead.p.display)})</span>` : ''}${series.length > hi.length ? `<span><i style="background:var(--other)"></i>Everyone else</span>` : ''}</div>`;
+  el.className = 'chart';
+  el.innerHTML = legend + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative points by week">${grid}${xl}${others}${lines}${labels}
+    <line id="xh" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" stroke="#8b99ab" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>
+    <rect x="${m.l - 10}" y="0" width="${W - m.l - m.r + 20}" height="${H}" fill="transparent" id="hit"/></svg><div class="tip"></div>`;
+  const svg = el.querySelector('svg'), tip = el.querySelector('.tip'), xh = el.querySelector('#xh');
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round(n === 1 ? 0 : (px - m.l) / ((W - m.l - m.r) / (n - 1)))));
+    xh.setAttribute('x1', x(i)); xh.setAttribute('x2', x(i)); xh.setAttribute('opacity', 1);
+    const rows = series.map(s => ({ s, v: s.vals[i] })).sort((a, b) => b.v - a.v);
+    const shown = rows.slice(0, 6); if (me && !shown.find(r => r.s === me)) shown.push(rows.find(r => r.s === me));
+    tip.innerHTML = `<b>Through ${esc(weeks[i].label)}</b>` + shown.map(o => `<div><span>${o.s === me ? 'You' : esc(o.s.p.display)}</span><span>${o.v}</span></div>`).join('') + (rows.length > shown.length ? `<div class="muted"><span>+${rows.length - shown.length} more</span></div>` : '');
+    tip.style.opacity = 1;
+    const tx = x(i) / W * r.width; tip.style.left = Math.min(Math.max(0, tx - tip.offsetWidth / 2), r.width - tip.offsetWidth) + 'px'; tip.style.top = '28px';
+  };
+  const hide = () => { tip.style.opacity = 0; xh.setAttribute('opacity', 0); };
+  svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move); svg.addEventListener('pointerleave', hide);
+}
+
+// ---------- league ----------
+async function renderLeague(main, lg) {
+  const d = S.league?.league?.id === lg.id ? S.league : await api('leagues/' + lg.id);
+  S.league = d;
+  const L = d.league;
+  const link = `${location.origin}/?join=${L.code}`;
+  main.innerHTML = `<div class="wkbar"><h1>${esc(L.name)}<span class="sub">${L.season} season · counting from ${esc(L.start?.label || 'Week 1')}</span></h1></div>
+    <div class="card" style="text-align:center"><h3>Invite code</h3><div class="code">${esc(L.code)}</div>
+      <p class="small muted" style="margin:0 0 12px">Friends can tap your invite link, or enter this code under “Join a league.”</p>
+      <div class="row" style="justify-content:center"><button class="btn" id="share">Share invite link</button><button class="btn ghost" id="copy">Copy</button></div></div>
+    <section class="sec"><h2>Players (${d.members.length})</h2><div class="card" style="padding:4px 16px">${d.members.map(x => `<div class="mem"><div class="av">${esc(initials(x.display))}</div><div class="nm"><b>${esc(x.display)}</b>${x.id === S.me.id ? '<span class="you">You</span>' : ''}<small>@${esc(x.username)}${x.id === L.ownerId ? ' · Commissioner' : ''}</small></div>
+      ${L.isOwner && x.id !== S.me.id ? `<button class="btn ghost sm" data-act="member" data-id="${x.id}" data-name="${esc(x.display)}">Manage</button>` : ''}</div>`).join('')}</div></section>
+    <section class="sec"><h2>How scoring works</h2><div class="card small"><ul class="rl" style="margin:0">
+      <li>Pick the winner of every game each week, or pick a <b>tie</b>.</li>
+      <li>Right winner: <b>1 point</b>. Wrong: <b>0</b>. Picked a tie and it ties: <b style="color:var(--gold)">10 points</b>.</li>
+      <li>All picks for the week lock when the <b>first game kicks off</b> (usually Thursday night). No pick = 0.</li>
+      <li>Nobody can see anyone else's picks until <b>every game that week is final</b>.</li>
+      <li>Weekly winner has the most points that week. The season champion has the most points after the Super Bowl.</li>
+      <li>Your picks count in every league you're in.</li></ul></div></section>
+    ${L.isOwner ? `<section class="sec"><h2>Commissioner</h2><div class="card stack"><form id="rn" class="row"><input class="in" name="name" value="${esc(L.name)}" maxlength="40" aria-label="League name"><button class="btn ghost" style="flex:none">Rename</button></form>
+      <button class="btn danger block" id="del">Delete league</button></div></section>`
+      : `<section class="sec"><button class="btn danger block" id="leave">Leave league</button></section>`}
+    <section class="sec"><div class="card" style="padding:4px 16px">
+      <a class="kv" href="#/account" style="color:var(--text);text-decoration:none"><span>Account &amp; sign out</span>${ICON.right}</a>
+      <a class="kv" href="#/home" onclick="S._stayHome=true" style="color:var(--text);text-decoration:none"><span>All leagues · start or join another</span>${ICON.right}</a></div></section>`;
+  $('#share').onclick = async () => {
+    const text = `Join my NFL pick'em league "${L.name}" on Pick'em Club! Code: ${L.code}`;
+    if (navigator.share) { try { await navigator.share({ title: "Pick'em Club", text, url: link }); } catch {} }
+    else { await copy(link); }
+  };
+  $('#copy').onclick = () => copy(link);
+  if ($('#rn')) $('#rn').onsubmit = async e => { e.preventDefault(); try { await api(`leagues/${L.id}/rename`, Object.fromEntries(new FormData(e.target))); await boot(); S.league = null; toast('League renamed'); } catch (er) { toast(er.message, 1); } };
+  if ($('#del')) $('#del').onclick = () => confirmDlg(`Delete ${L.name}?`, 'This removes the league for everyone. Players keep their accounts and picks.', 'Delete league', async () => { await api(`leagues/${L.id}/delete`, {}); S.league = null; await boot(); go('#/home'); });
+  if ($('#leave')) $('#leave').onclick = () => confirmDlg(`Leave ${L.name}?`, 'You can rejoin later with the invite code.', 'Leave', async () => { await api(`leagues/${L.id}/leave`, {}); S.league = null; await boot(); go('#/home'); });
+  main.querySelectorAll('[data-act=member]').forEach(b => b.onclick = () => manageMember(L, +b.dataset.id, b.dataset.name));
+}
+async function copy(t) { try { await navigator.clipboard.writeText(t); toast('Invite link copied'); } catch { prompt('Copy this link:', t); } }
+function confirmDlg(title, msg, okLabel, fn) {
+  const d = $('#dlg');
+  d.innerHTML = `<h2>${esc(title)}</h2><p class="muted">${esc(msg)}</p><div class="row" style="justify-content:flex-end"><button class="btn ghost sm" id="dx">Cancel</button><button class="btn sm" id="dok" style="background:var(--bad);color:#fff">${esc(okLabel)}</button></div>`;
+  d.showModal(); $('#dx').onclick = () => d.close();
+  $('#dok').onclick = async () => { try { await fn(); d.close(); } catch (e) { toast(e.message, 1); } };
+}
+function manageMember(L, id, name) {
+  const d = $('#dlg');
+  d.innerHTML = `<h2>${esc(name)}</h2><p class="muted small">If ${esc(name)} forgot their password, reset it here and send them the temporary one.</p>
+    <div class="stack"><button class="btn ghost block" id="rs">Reset password</button><button class="btn danger block" id="rm">Remove from league</button><button class="btn ghost block" id="dx">Close</button></div>`;
+  d.showModal();
+  $('#dx').onclick = () => d.close();
+  $('#rs').onclick = async () => {
+    try { const r = await api(`leagues/${L.id}/reset`, { userId: id });
+      d.innerHTML = `<h2>Password reset</h2><p class="muted small">Send this to ${esc(name)}. They can change it under Account after signing in.</p>
+        <div class="card" style="background:var(--bg)"><div class="kv"><span class="muted">Username</span><b>${esc(r.username)}</b></div><div class="kv"><span class="muted">Temporary password</span><b style="font-family:monospace;font-size:18px">${esc(r.tempPassword)}</b></div></div>
+        <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn sm" id="dx2">Done</button></div>`;
+      $('#dx2').onclick = () => d.close();
+    } catch (e) { toast(e.message, 1); }
+  };
+  $('#rm').onclick = async () => { try { await api(`leagues/${L.id}/remove`, { userId: id }); d.close(); S.league = null; await boot(); render(); toast(`${name} was removed`); } catch (e) { toast(e.message, 1); } };
+}
+
+// ---------- account ----------
+function renderAccount(app) {
+  const back = +store.get('lastLeague') && S.leagues.find(l => l.id === +store.get('lastLeague'));
+  app.innerHTML = `<header class="top"><div class="wrap"><a class="brand" href="${back ? `#/l/${back.id}/picks` : '#/home'}"><img src="/icon-192.png" alt="">Pick'em<span>Club</span></a></div></header>
+  <main class="wrap" style="max-width:480px">
+    <div class="wkbar"><h1>Account<span class="sub">Signed in as @${esc(S.me.username)}</span></h1></div>
+    <form class="card stack" id="nf"><div><label class="f" for="dn2">Display name</label><input class="in" id="dn2" name="display" value="${esc(S.me.display)}" maxlength="24" required></div><button class="btn ghost block">Save name</button></form>
+    <section class="sec"><h2>Change password</h2><form class="card stack" id="pf">
+      <div><label class="f" for="op">Current password</label><input class="in" id="op" name="oldPassword" type="password" autocomplete="current-password" required></div>
+      <div><label class="f" for="np">New password</label><input class="in" id="np" name="newPassword" type="password" autocomplete="new-password" minlength="6" required></div>
+      <div class="err" id="perr"></div><button class="btn ghost block">Change password</button></form></section>
+    <section class="sec stack"><a class="btn ghost block" href="#/home" onclick="S._stayHome=true">My leagues</a><button class="btn danger block" id="so">Sign out</button></section>
+  </main>`;
+  $('#nf').onsubmit = async e => { e.preventDefault(); try { await api('account', Object.fromEntries(new FormData(e.target))); await boot(); toast('Name saved'); } catch (er) { toast(er.message, 1); } };
+  $('#pf').onsubmit = async e => { e.preventDefault(); try { await api('account', Object.fromEntries(new FormData(e.target))); e.target.reset(); $('#perr').textContent = ''; toast('Password changed'); } catch (er) { $('#perr').textContent = er.message; } };
+  $('#so').onclick = async () => { await api('logout', {}); S.me = null; S.league = null; location.hash = ''; render(); };
+}
+
+boot();
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+</script>
+</body>
+</html>
