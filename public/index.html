@@ -145,6 +145,8 @@ input.in:focus,select.in:focus{border-color:var(--turf);box-shadow:0 0 0 3px var
 .team:active:not(:disabled){transform:scale(.97)}
 .team img{width:38px;height:38px;object-fit:contain;flex:none}
 .team .nm{min-width:0;flex:1}
+.team .ha{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.team.home .ha{color:#8fbaf0}
 .team .ab{font-family:var(--display);font-weight:800;font-size:22px;line-height:1;letter-spacing:.3px}
 .team .rec{font-size:12px;color:var(--muted);margin-top:2px}
 .team .odds{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
@@ -470,7 +472,7 @@ function teamBtn(g, side, pick, locked) {
   const tbd = !t.id || t.abbr === 'TBD';
   return `<button class="${cls.join(' ')}" data-g="${g.id}" data-p="${esc(t.id)}" ${locked || tbd ? 'disabled' : ''} aria-pressed="${sel}" aria-label="${esc(t.name)}">
     ${t.logo ? `<img src="${esc(t.logo)}" alt="" loading="lazy">` : ''}
-    <div class="nm"><div class="ab">${esc(t.abbr)}</div><div class="rec">${esc(t.record || (side === 'home' ? 'Home' : 'Away'))}</div>${g.state === 'pre' && (t.ml || t.spread) ? `<div class="odds">${t.spread ? `<span class="ml ${t.spread.startsWith('-') ? 'fav' : ''}" title="Point spread">${esc(t.spread)}</span>` : ''}${t.ml ? `<span class="ml ${t.ml.startsWith('-') ? 'fav' : ''}" title="Moneyline">ML ${esc(t.ml)}</span>` : ''}</div>` : ''}</div>
+    <div class="nm"><div class="ha">${side === 'home' ? 'Home 🏠' : 'Away ✈️'}</div><div class="ab">${esc(t.abbr)}</div>${t.record ? `<div class="rec">${esc(t.record)}</div>` : ''}${g.state === 'pre' && (t.ml || t.spread) ? `<div class="odds">${t.spread ? `<span class="ml ${t.spread.startsWith('-') ? 'fav' : ''}" title="Point spread">${esc(t.spread)}</span>` : ''}${t.ml ? `<span class="ml ${t.ml.startsWith('-') ? 'fav' : ''}" title="Moneyline">ML ${esc(t.ml)}</span>` : ''}</div>` : ''}</div>
     ${showScore ? `<div class="sc">${t.score}</div>` : ''}
   </button>`;
 }
@@ -500,7 +502,7 @@ function gameCard(g, pick, locked, split) {
   return `<div class="game ${locked ? 'locked' : ''} ${locked && g.state === 'pre' ? 'closed' : ''}">
     <div class="gmeta">${statusPill(g)}${resultTag(g, pick) || (g.state === 'pre' ? (locked ? `<span class="lk">🔒 Picks closed</span>` : `<span class="at">Pick by ${fmtWhen(g.locksAt)}</span>`) : `<span class="at">${esc(g.away.abbr)} @ ${esc(g.home.abbr)}</span>`)}</div>
     <div class="mrow">${teamBtn(g, 'away', pick, locked)}
-      <button class="${tieCls}" data-g="${g.id}" data-p="TIE" ${locked ? 'disabled' : ''} aria-pressed="${tieSel}" aria-label="Pick a tie">TIE<small>+10</small></button>
+      <button class="${tieCls}" data-g="${g.id}" data-p="TIE" ${locked ? 'disabled' : ''} aria-pressed="${tieSel}" aria-label="Pick a tie"><span class="at" style="margin-bottom:2px">@</span>TIE<small>+10</small></button>
       ${teamBtn(g, 'home', pick, locked)}</div>${sp}
     ${gameFoot(g)}${S.openStats.has(g.id) ? statsPanel(g) : ''}
   </div>`;
@@ -533,7 +535,7 @@ function statsPanel(g) {
     if (a && l.key === 'to' && a.v > 0) a.v = '+' + a.v; if (h && l.key === 'to' && h.v > 0) h.v = '+' + h.v;
     return `<div class="srow">${cell(a, h, 'a')}<div class="sl">${esc(l.label)}</div>${cell(h, a, 'h')}</div>`;
   }).join('');
-  return `<div class="stats"><div class="srow hd"><div>${esc(g.away.abbr)}</div><div class="sl">${g.away.record || g.home.record ? `${esc(g.away.record || '–')} &nbsp;vs&nbsp; ${esc(g.home.record || '–')}` : 'Season stats'}</div><div class="sv h" style="font-size:17px">${esc(g.home.abbr)}</div></div>${rows}
+  return `<div class="stats"><div class="srow hd"><div>${esc(g.away.abbr)}<small style="display:block;font-family:var(--sans);font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.3px">AWAY</small></div><div class="sl">${g.away.record || g.home.record ? `${esc(g.away.record || '–')} &nbsp;vs&nbsp; ${esc(g.home.record || '–')}` : 'Season stats'}</div><div class="sv h" style="font-size:17px">${esc(g.home.abbr)}<small style="font-family:var(--sans);font-size:11px;letter-spacing:.3px">HOME</small></div></div>${rows}
     <div class="snote">${S.stats.note ? esc(S.stats.note) + (S.stats.error ? ` <span style="opacity:.6">(${esc(S.stats.error.slice(0, 120))})</span>` : '') + '<br>' : ''}${S.stats.season} regular season · green = better rank · updated ${fmtTime(S.stats.fetched)}</div></div>`;
 }
 async function loadStats(force) {
