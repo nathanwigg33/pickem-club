@@ -534,7 +534,7 @@ function statsPanel(g) {
     return `<div class="srow">${cell(a, h, 'a')}<div class="sl">${esc(l.label)}</div>${cell(h, a, 'h')}</div>`;
   }).join('');
   return `<div class="stats"><div class="srow hd"><div>${esc(g.away.abbr)}</div><div class="sl">${g.away.record || g.home.record ? `${esc(g.away.record || '–')} &nbsp;vs&nbsp; ${esc(g.home.record || '–')}` : 'Season stats'}</div><div class="sv h" style="font-size:17px">${esc(g.home.abbr)}</div></div>${rows}
-    <div class="snote">${S.stats.season} regular season · green = better rank · updated ${fmtTime(S.stats.fetched)}</div></div>`;
+    <div class="snote">${S.stats.note ? esc(S.stats.note) + (S.stats.error ? ` <span style="opacity:.6">(${esc(S.stats.error.slice(0, 120))})</span>` : '') + '<br>' : ''}${S.stats.season} regular season · green = better rank · updated ${fmtTime(S.stats.fetched)}</div></div>`;
 }
 async function loadStats(force) {
   if (!force && S.stats && Date.now() - S.statsAt < 10 * 60000) return;

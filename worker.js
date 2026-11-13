@@ -226,12 +226,9 @@ async function getTeamStats(env, season, force = false) {
   const k = `stats-${season}`;
   const row = await env.DB.prepare(`SELECT v FROM meta WHERE k=?`).bind(k).first();
   const cached = row ? JSON.parse(row.v) : null;
-  if (cached && !force && now() - cached.fetched < 30 * 60000) return cached;
+  if (cached && !force && now() - cached.fetched < (cached.partial ? 5 : 30) * 60000) return cached;
   try {
-    const url = (env.ESPN_STATS || ESPN_STATS) + `?region=us&lang=en&contentorigin=espn&isqualified=true&page=1&limit=40&category=offense&season=${season}&seasontype=2`;
-    const r = await fetch(url, { headers: { 'user-agent': 'PickemClub/1.0' } });
-    if (!r.ok) throw new Error('ESPN stats ' + r.status);
-    const d = await r.json();
+    const d = await fetchStatsFeed(env, season);
     const names = {}; (d.categories || []).forEach(c => { names[c.name] = c.names || []; });
     const raw = {};   // teamId -> key -> value
     for (const t of d.teams || []) {
@@ -258,11 +255,69 @@ async function getTeamStats(env, season, force = false) {
     await env.DB.prepare(`INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).bind(k, JSON.stringify(out)).run();
     return out;
   } catch (e) {
-    if (cached) return cached;
-    throw e;
+    if (cached && !cached.partial) return cached;
+    try {
+      const out = await statsFromStandings(env, season);
+      out.note = 'Full stats are temporarily unavailable, showing scoring only.';
+      out.error = String(e.message || e);
+      await env.DB.prepare(`INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).bind(k, JSON.stringify(out)).run();
+      return out;
+    } catch (e2) {
+      if (cached) return cached;
+      throw new Error(`${e.message || e}; ${e2.message || e2}`);
+    }
   }
 }
 const vals_count = teams => Object.keys(teams).length;
+
+// ESPN serves the same stats feed from a couple of hosts; try each, with browser-like headers.
+async function fetchStatsFeed(env, season) {
+  const qs = `?region=us&lang=en&contentorigin=espn&isqualified=true&page=1&limit=40&category=offense&sort=offense.totalYards:desc&season=${season}&seasontype=2`;
+  const hosts = env.ESPN_STATS ? [env.ESPN_STATS] : [
+    ESPN_STATS,
+    'https://site.api.espn.com/apis/common/v3/sports/football/nfl/statistics/byteam',
+  ];
+  const errors = [];
+  for (const h of hosts) {
+    try {
+      const r = await fetch(h + qs, { headers: {
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        'accept': 'application/json, text/plain, */*', 'referer': 'https://www.espn.com/', 'origin': 'https://www.espn.com',
+      } });
+      if (!r.ok) { errors.push(`${new URL(h).host} ${r.status}`); continue; }
+      const d = await r.json();
+      if (!Array.isArray(d.teams) || !d.teams.length) { errors.push(`${new URL(h).host} no teams`); continue; }
+      if (!Array.isArray(d.categories) || !d.categories.length) { errors.push(`${new URL(h).host} no labels`); continue; }
+      return d;
+    } catch (e) { errors.push(`${new URL(h).host} ${e.message}`); }
+  }
+  throw new Error(errors.join('; '));
+}
+
+// Backup: points scored and allowed per game from the standings, if the full stats feed can't be reached.
+async function statsFromStandings(env, season) {
+  const r = await fetch(env.ESPN_STANDINGS || `https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season=${season}`, { headers: { 'user-agent': 'PickemClub/1.0' } });
+  if (!r.ok) throw new Error('standings ' + r.status);
+  const d = await r.json();
+  const entries = [];
+  (function walk(n) { if (!n) return; (n.standings?.entries || []).forEach(e => entries.push(e)); (n.children || []).forEach(walk); })(d);
+  const raw = {};
+  entries.forEach(e => {
+    const st = Object.fromEntries((e.stats || []).map(x => [x.name, Number(x.value)]));
+    const gp = (st.wins || 0) + (st.losses || 0) + (st.ties || 0);
+    if (gp && e.team?.id) raw[String(e.team.id)] = { ppg: st.pointsFor / gp, papg: st.pointsAgainst / gp, diff: (st.pointsFor - st.pointsAgainst) / gp };
+  });
+  const defs = [['ppg', 'Points / game', true, 1], ['papg', 'Points allowed / game', false, 1], ['diff', 'Point margin / game', true, 1]];
+  const teams = {}; Object.keys(raw).forEach(id => teams[id] = {});
+  for (const [key, , higher, dp] of defs) {
+    const vals = Object.keys(raw).map(id => [id, raw[id][key]]).filter(x => !isNaN(x[1]));
+    vals.forEach(([id, v]) => {
+      const rank = 1 + vals.filter(x => higher ? x[1] > v : x[1] < v).length;
+      teams[id][key] = { v: Math.round(v * 10 ** dp) / 10 ** dp, rank, tied: vals.filter(x => x[1] === v).length > 1 };
+    });
+  }
+  return { season, fetched: now(), count: entries.length, partial: true, labels: defs.map(([key, label, higher, dp]) => ({ key, label, higher, dp })), teams };
+}
 
 const isLocked = w => !!(w && w.last_kick && now() >= w.last_kick - LOCK_BEFORE);
 const isFinal = w => !!(w && w.all_final);
@@ -609,7 +664,7 @@ async function api(req, env, url) {
     const cur = await getCurrent(env);
     const season = +url.searchParams.get('season') || cur.season;
     try { return json(await getTeamStats(env, season)); }
-    catch { return bad('Team stats aren’t available right now. Try again in a minute.', 502); }
+    catch (e) { return bad('Team stats aren’t available right now (' + String(e.message || e).slice(0, 160) + ').', 502); }
   }
   if (path === '/api/picks' && method === 'POST') {
     need();
