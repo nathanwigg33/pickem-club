@@ -663,8 +663,9 @@ async function renderStandings(main, lg) {
   const st = d.standings, P = st.players;
   let html = `<div class="wkbar"><h1>Season standings<span class="sub">${d.league.season} season · counting from ${esc(d.league.start?.label || 'Week 1')}</span></h1></div>`;
   if (st.champion) html += `<div class="champ"><div class="big">🏆</div><h1>${st.champion.map(esc).join(' & ')}</h1><p class="muted" style="margin:4px 0 0">${d.league.season} ${esc(d.league.name)} champion${st.champion.length > 1 ? 's' : ''}</p></div>`;
-  if (!st.weeks.length) {
-    main.innerHTML = html + `<div class="card empty"><div class="big">📊</div><b>No weeks are final yet.</b><p class="muted small">Standings fill in once ${esc(d.league.start?.label || 'the first week')} is over. Picks stay secret until then.</p></div>`;
+  const hasCarry = P.some(p => p.carry > 0), before = beforeLabel(d.league.start);
+  if (!st.weeks.length && !hasCarry) {
+    main.innerHTML = html + `<div class="card empty"><div class="big">📊</div><b>No weeks are final yet.</b><p class="muted small">Standings fill in once ${esc(d.league.start?.label || 'the first week')} is over. Picks stay secret until then.</p>${d.league.isOwner && d.league.start?.idx > 1 ? `<p class="small"><a href="#/l/${lg.id}/league">Already been playing? Add everyone's points from ${esc(before)} →</a></p>` : ''}</div>`;
     return;
   }
   const me = P.find(p => p.id === S.me.id);
@@ -673,11 +674,12 @@ async function renderStandings(main, lg) {
       <div class="tile"><div class="k">Your rank</div><div class="v">${me.rank}<span class="muted" style="font-size:17px"> of ${P.length}</span></div></div>
       <div class="tile"><div class="k">Points</div><div class="v">${me.points}</div><div class="s">${P[0].id === me.id ? (P[1] ? `+${me.points - P[1].points} ahead` : 'Leading') : `${P[0].points - me.points} behind 1st`}</div></div>
       <div class="tile"><div class="k">Pick accuracy</div><div class="v">${pct(me.pct)}</div><div class="s">${me.correct}–${me.wrong}</div></div>
-      <div class="tile"><div class="k">Weeks won</div><div class="v">${me.weeksWon}</div><div class="s">of ${st.weeks.length}</div></div></div>`;
+      <div class="tile"><div class="k">Weeks won</div><div class="v">${me.weeksWon}</div><div class="s">of ${st.weeks.length} tracked</div></div></div>`;
   }
   html += `<section class="sec"><h2>Leaderboard</h2><div class="card" style="padding:4px 8px"><table class="tbl" id="lb"><thead><tr><th></th><th>Player</th><th class="n">W–L</th><th class="n">%</th><th class="n">Pts</th></tr></thead><tbody>${P.map(p =>
-    `<tr class="click ${p.id === S.me.id ? 'me' : ''} ${p.rank === 1 ? 'medal1' : ''}" data-id="${p.id}"><td class="rk">${p.rank}</td><td><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</td><td class="n">${p.correct}–${p.wrong}</td><td class="n">${pct(p.pct)}</td><td class="n pts">${p.points}</td></tr>`).join('')}</tbody></table></div>
-    <p class="small muted">Tap a player for their full stats. Ties in points are broken by pick accuracy.</p></section>`;
+    `<tr class="click ${p.id === S.me.id ? 'me' : ''} ${p.rank === 1 ? 'medal1' : ''}" data-id="${p.id}"><td class="rk">${p.rank}</td><td><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</td><td class="n">${p.correct + p.wrong ? `${p.correct}–${p.wrong}` : '—'}</td><td class="n">${pct(p.pct)}</td><td class="n pts">${p.points}</td></tr>`).join('')}</tbody></table></div>
+    <p class="small muted">${hasCarry ? `Points include ${esc(before)}, entered by the commissioner. W–L and % count only weeks picked in the app. ` : ''}Tap a player for their full stats. Ties in points are broken by pick accuracy.</p></section>`;
+  if (!st.weeks.length) { main.innerHTML = html + `<p class="small muted" style="text-align:center">Weekly stats and the season chart start once ${esc(d.league.start?.label || 'the first week')} is final.</p>`; bindLeaderboard(main, st, P, before); return; }
   html += `<section class="sec"><h2>Points over the season</h2><div class="card"><div id="chart"></div></div></section>`;
   // league leaders
   const best = (f, fmt, minOk = () => true) => { const c = P.filter(minOk); if (!c.length) return null; const top = Math.max(...c.map(f)); const who = c.filter(p => f(p) === top); return { v: fmt(top), who: who.map(p => p.display).join(', ') }; };
@@ -691,7 +693,17 @@ async function renderStandings(main, lg) {
   html += `<section class="sec"><h2>League leaders</h2><div class="tiles">${L.map(([k, b]) => `<div class="tile"><div class="k">${k}</div><div class="v">${b.v}</div><div class="s">${esc(b.who)}</div></div>`).join('')}</div></section>`;
   html += `<section class="sec"><h2>Weekly winners</h2><div class="card" style="padding:4px 16px">${st.weekWinners.slice().reverse().map(x => `<a class="kv" style="text-decoration:none;color:var(--text)" href="#/l/${lg.id}/results/${x.key}"><span>${esc(x.label)}</span><span>${x.names.length ? `<b>${x.names.map(esc).join(', ')}</b> <span class="muted">· ${x.points} pts</span>` : '<span class="muted">—</span>'}</span></a>`).join('')}</div></section>`;
   main.innerHTML = html;
-  drawChart($('#chart'), st, P);
+  drawChart($('#chart'), st, P, hasCarry ? before : null);
+  bindLeaderboard(main, st, P, before);
+}
+function beforeLabel(start) {
+  const i = start?.idx || 1;
+  if (i <= 1) return 'earlier weeks';
+  if (i === 2) return 'Week 1';
+  if (i <= 19) return `Weeks 1–${i - 1}`;
+  return 'earlier weeks';
+}
+function bindLeaderboard(main, st, P, before) {
   $('#lb').onclick = e => {
     const tr = e.target.closest('tr[data-id]'); if (!tr) return;
     const open = tr.nextElementSibling?.classList.contains('detail');
@@ -700,7 +712,7 @@ async function renderStandings(main, lg) {
     const p = P.find(x => x.id === +tr.dataset.id);
     const t = (k, v, s = '') => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
     tr.insertAdjacentHTML('afterend', `<tr class="detail"><td colspan="5"><div class="tiles">
-      ${t('Points', p.points, `${p.avg.toFixed(1)} per week`)}
+      ${t('Points', p.points, p.carry ? `${p.carry} from ${esc(before)} + ${p.earned} since` : `${p.avg.toFixed(1)} per week`)}
       ${t('Correct', pct(p.pct), `${p.correct} right, ${p.wrong} wrong`)}
       ${t('Weeks won', p.weeksWon, `of ${st.weeks.length}`)}
       ${t('Best week', p.best ? p.best.points : '—', p.best ? esc(p.best.label) : '')}
@@ -714,9 +726,9 @@ async function renderStandings(main, lg) {
 }
 
 // cumulative points line chart: you (blue) and the leader (orange) highlighted, everyone else muted
-function drawChart(el, st, P) {
-  const weeks = st.weeks, n = weeks.length;
-  const series = P.map(p => { let c = 0; return { p, vals: p.weekly.map(v => (c += v)) }; });
+function drawChart(el, st, P, before) {
+  const weeks = before ? [{ short: 'Start', label: before }, ...st.weeks] : st.weeks, n = weeks.length;
+  const series = P.map(p => { let c = before ? p.carry : 0; const v = p.weekly.map(x => (c += x)); return { p, vals: before ? [p.carry, ...v] : v }; });
   const me = series.find(s => s.p.id === S.me.id), lead = series[0];
   const maxV = Math.max(1, ...series.map(s => s.vals[n - 1] || 0));
   const W = Math.max(300, Math.min(680, el.clientWidth || 340)), H = Math.round(Math.min(280, Math.max(200, W * 0.6))), m = { l: 30, r: 52, t: 12, b: 26 };
@@ -776,7 +788,11 @@ async function renderLeague(main, lg) {
       <li>Nobody can see anyone else's picks until <b>every game that week is final</b>.</li>
       <li>Weekly winner has the most points that week. The season champion has the most points after the Super Bowl.</li>
       <li>Your picks count in every league you're in.</li></ul></div></section>
-    ${L.isOwner ? `<section class="sec"><h2>Commissioner</h2><div class="card stack"><form id="rn" class="row"><input class="in" name="name" value="${esc(L.name)}" maxlength="40" aria-label="League name"><button class="btn ghost" style="flex:none">Rename</button></form>
+    ${L.isOwner ? `<section class="sec"><h2>Points from earlier</h2><form class="card stack" id="cy">
+      <p class="small muted" style="margin:0">Already been playing this season? Enter each player's total points from <b style="color:var(--text)">${esc(beforeLabel(L.start))}</b>. They're added to the season standings, and new weeks add on top. Friends who join later will show up here too.</p>
+      ${d.members.map(x => `<div class="row"><div class="av">${esc(initials(x.display))}</div><label style="flex:1;font-weight:600" for="cy${x.id}">${esc(x.display)}</label><input class="in" id="cy${x.id}" data-uid="${x.id}" type="number" inputmode="numeric" min="0" step="1" value="${x.carry || 0}" style="width:96px;text-align:right;font-weight:700"></div>`).join('')}
+      <button class="btn block">Save points</button></form></section>
+      <section class="sec"><h2>Commissioner</h2><div class="card stack"><form id="rn" class="row"><input class="in" name="name" value="${esc(L.name)}" maxlength="40" aria-label="League name"><button class="btn ghost" style="flex:none">Rename</button></form>
       <button class="btn danger block" id="del">Delete league</button></div></section>`
       : `<section class="sec"><button class="btn danger block" id="leave">Leave league</button></section>`}
     <section class="sec"><div class="card" style="padding:4px 16px">
@@ -788,6 +804,11 @@ async function renderLeague(main, lg) {
     else { await copy(link); }
   };
   $('#copy').onclick = () => copy(link);
+  if ($('#cy')) $('#cy').onsubmit = async e => {
+    e.preventDefault();
+    const points = {}; e.target.querySelectorAll('input[data-uid]').forEach(i => points[i.dataset.uid] = i.value === '' ? 0 : i.value);
+    try { await api(`leagues/${L.id}/carry`, { points }); S.league = null; toast('Points saved. Check Standings.'); } catch (er) { toast(er.message, 1); }
+  };
   if ($('#rn')) $('#rn').onsubmit = async e => { e.preventDefault(); try { await api(`leagues/${L.id}/rename`, Object.fromEntries(new FormData(e.target))); await boot(); S.league = null; toast('League renamed'); } catch (er) { toast(er.message, 1); } };
   if ($('#del')) $('#del').onclick = () => confirmDlg(`Delete ${L.name}?`, 'This removes the league for everyone. Players keep their accounts and picks.', 'Delete league', async () => { await api(`leagues/${L.id}/delete`, {}); S.league = null; await boot(); go('#/home'); });
   if ($('#leave')) $('#leave').onclick = () => confirmDlg(`Leave ${L.name}?`, 'You can rejoin later with the invite code.', 'Leave', async () => { await api(`leagues/${L.id}/leave`, {}); S.league = null; await boot(); go('#/home'); });

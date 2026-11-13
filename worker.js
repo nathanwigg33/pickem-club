@@ -76,6 +76,7 @@ async function ensureSchema(env) {
   if (schemaReady) return;
   await env.DB.batch(SCHEMA.map(s => env.DB.prepare(s)));
   // columns added after the first release
+  try { await env.DB.prepare(`ALTER TABLE members ADD COLUMN carry INTEGER DEFAULT 0`).run(); } catch { /* already there */ }
   for (const col of ['home_ml TEXT', 'away_ml TEXT', 'odds_provider TEXT', 'home_spread TEXT', 'away_spread TEXT', 'over_under TEXT']) {
     try { await env.DB.prepare(`ALTER TABLE games ADD COLUMN ${col}`).run(); } catch { /* already there */ }
   }
@@ -359,7 +360,7 @@ async function membership(env, leagueId, userId) {
   return env.DB.prepare(`SELECT l.* FROM leagues l JOIN members m ON m.league_id=l.id WHERE l.id=? AND m.user_id=?`).bind(leagueId, userId).first();
 }
 async function leagueMembers(env, leagueId) {
-  const r = await env.DB.prepare(`SELECT u.id, u.display, u.username, m.joined FROM members m JOIN users u ON u.id=m.user_id WHERE m.league_id=? ORDER BY m.joined`).bind(leagueId).all();
+  const r = await env.DB.prepare(`SELECT u.id, u.display, u.username, m.joined, COALESCE(m.carry, 0) AS carry FROM members m JOIN users u ON u.id=m.user_id WHERE m.league_id=? ORDER BY m.joined`).bind(leagueId).all();
   return r.results;
 }
 function firstOpenIdx(weeks, weekRows, curKey) {
@@ -390,7 +391,8 @@ async function computeStandings(env, league, members, cur) {
   const pk = {}; picks.forEach(p => { (pk[p.user_id] ||= {})[p.game_id] = p.pick; });
   const byWeek = {}; games.forEach(g => (byWeek[g.week_key] ||= []).push(g));
 
-  const P = members.map(m => ({ id: m.id, display: m.display, points: 0, correct: 0, wrong: 0, missed: 0, tiesHit: 0, tiePicks: 0,
+  // carry = points from earlier in the season, entered by the commissioner (weeks before the league started here)
+  const P = members.map(m => ({ id: m.id, display: m.display, carry: m.carry || 0, points: m.carry || 0, earned: 0, correct: 0, wrong: 0, missed: 0, tiesHit: 0, tiePicks: 0,
     weekly: [], weeksWon: 0, best: null, streak: 0, longest: 0, homePicks: 0, totalPicks: 0, favPicks: {} }));
   for (const w of finals) {
     const gs = byWeek[w.key] || [];
@@ -409,7 +411,7 @@ async function computeStandings(env, league, members, cur) {
         if (s > 0) { p.correct++; pts += s; p.streak++; p.longest = Math.max(p.longest, p.streak); if (g.winner === 'TIE') p.tiesHit++; }
         else { p.wrong++; p.streak = 0; }
       }
-      p.points += pts; p.weekly.push(pts);
+      p.points += pts; p.earned += pts; p.weekly.push(pts);
       if (!p.best || pts > p.best.points) p.best = { points: pts, label: w.label };
       return pts;
     });
@@ -421,7 +423,7 @@ async function computeStandings(env, league, members, cur) {
   P.forEach(p => {
     const decided = p.correct + p.wrong;
     p.pct = decided ? p.correct / decided : null;
-    p.avg = finals.length ? p.points / finals.length : 0;
+    p.avg = finals.length ? p.earned / finals.length : 0;
     p.homePct = p.totalPicks ? p.homePicks / p.totalPicks : null;
     const fav = Object.entries(p.favPicks).sort((a, b) => b[1] - a[1])[0];
     p.favTeam = fav ? { abbr: fav[0], count: fav[1] } : null;
@@ -557,11 +559,11 @@ async function api(req, env, url) {
     return json({
       league: { id: league.id, name: league.name, code: league.code, season: league.season, isOwner: league.owner_id === user.id, ownerId: league.owner_id,
         start: weeks.find(w => w.idx === league.start_idx) },
-      members: members.map(x => ({ id: x.id, display: x.display, username: x.username })),
+      members: members.map(x => ({ id: x.id, display: x.display, username: x.username, carry: x.carry || 0 })),
       standings, current: cur.key,
     });
   }
-  if ((m = /^\/api\/leagues\/(\d+)\/(rename|leave|remove|reset|delete)$/.exec(path)) && method === 'POST') {
+  if ((m = /^\/api\/leagues\/(\d+)\/(rename|leave|remove|reset|delete|carry)$/.exec(path)) && method === 'POST') {
     need();
     const league = await membership(env, +m[1], user.id);
     if (!league) return bad('League not found.', 404);
@@ -577,6 +579,18 @@ async function api(req, env, url) {
     if (action === 'rename') {
       const name = cleanName(b.name, 40); if (!name) return bad('Give your league a name.');
       await env.DB.prepare(`UPDATE leagues SET name=? WHERE id=?`).bind(name, league.id).run();
+      return json({ ok: true });
+    }
+    if (action === 'carry') {
+      // { points: { "<userId>": 42, ... } }
+      const pts = b.points && typeof b.points === 'object' ? b.points : {};
+      const stmts = [];
+      for (const [uid, val] of Object.entries(pts)) {
+        const n = Math.round(Number(val));
+        if (!Number.isFinite(n) || n < 0 || n > 100000) return bad('Points must be a whole number of 0 or more.');
+        stmts.push(env.DB.prepare(`UPDATE members SET carry=? WHERE league_id=? AND user_id=?`).bind(n, league.id, +uid));
+      }
+      if (stmts.length) await env.DB.batch(stmts);
       return json({ ok: true });
     }
     if (action === 'delete') {

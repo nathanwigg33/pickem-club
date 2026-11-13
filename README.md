@@ -29,6 +29,9 @@ First-time setup:
    *If the deploy log instead complains about the database*, go to **Storage & Databases → D1 → Create**, name it `pickem-club`, copy its **Database ID**, and add it to `wrangler.jsonc` as `"database_id": "<the id>"` next to `"database_name"`. Then push again.
 4. The app will be live at `https://pickem-club.<your-subdomain>.workers.dev`.
 
+## Points from earlier in the season
+If your group was already playing before you started using the app, the commissioner can enter each player's points so far under **League → Points from earlier**. Those points are added to the season standings, and every week picked in the app adds on top. Accuracy (W–L, %) only counts weeks picked in the app.
+
 ## Forgotten passwords
 There's no email, so the league's commissioner resets passwords: **League → Manage (next to the player) → Reset password**. It shows a temporary password to send them, and they change it under **Account**.
 
