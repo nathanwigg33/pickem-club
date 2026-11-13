@@ -5,7 +5,8 @@ An NFL pick'em app for you and your friends. Make a league, invite people with a
 ## Rules
 - Pick the winner of every game, or pick a **tie**.
 - Right winner: **1 point**. Wrong: **0**. Picked a tie and the game ties: **10 points**. No pick: 0.
-- All picks for a week lock when the **week's first game kicks off** (usually Thursday night).
+- You can pick each game until **24 hours before it kicks off**. Then that game locks.
+- Each game shows both teams' **moneylines** (from the sportsbook ESPN lists, currently DraftKings) to help you pick.
 - Nobody can see anyone else's picks until **every game that week is final**. Then the whole pick sheet is revealed.
 - Each week has a weekly winner. The season champion has the most points after the Super Bowl. Playoff games count.
 - A player's picks count in every league they belong to.

@@ -147,6 +147,9 @@ input.in:focus,select.in:focus{border-color:var(--turf);box-shadow:0 0 0 3px var
 .team .nm{min-width:0;flex:1}
 .team .ab{font-family:var(--display);font-weight:800;font-size:22px;line-height:1;letter-spacing:.3px}
 .team .rec{font-size:12px;color:var(--muted);margin-top:2px}
+.team .ml{display:inline-block;margin-top:5px;padding:1px 7px;border-radius:6px;background:var(--bg);border:1px solid var(--line);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text2)}
+.team .ml.fav{color:var(--text)}
+.gmeta .lk{color:var(--gold);font-weight:600}
 .team .sc{font-family:var(--display);font-weight:700;font-size:26px;color:var(--text2)}
 .team.win .sc{color:var(--text)}
 .team.lose{opacity:.62}
@@ -160,6 +163,7 @@ input.in:focus,select.in:focus{border-color:var(--turf);box-shadow:0 0 0 3px var
 .tie.sel{border-color:var(--gold);background:var(--golddim);color:var(--gold)}
 .tie.sel.no{border-color:var(--bad);background:var(--baddim);color:var(--bad)}
 .at{font-size:11px;color:var(--muted)}
+.game.closed .mrow{opacity:.55}
 .game.locked .team:disabled,.game.locked .tie:disabled{cursor:default}
 .split{display:flex;height:5px;border-radius:5px;overflow:hidden;margin:10px 4px 2px;gap:2px;background:var(--surface)}
 .split i{display:block;height:100%}
@@ -449,7 +453,7 @@ function teamBtn(g, side, pick, locked) {
   const tbd = !t.id || t.abbr === 'TBD';
   return `<button class="${cls.join(' ')}" data-g="${g.id}" data-p="${esc(t.id)}" ${locked || tbd ? 'disabled' : ''} aria-pressed="${sel}" aria-label="${esc(t.name)}">
     ${t.logo ? `<img src="${esc(t.logo)}" alt="" loading="lazy">` : ''}
-    <div class="nm"><div class="ab">${esc(t.abbr)}</div><div class="rec">${esc(t.record || (side === 'home' ? 'Home' : 'Away'))}</div></div>
+    <div class="nm"><div class="ab">${esc(t.abbr)}</div><div class="rec">${esc(t.record || (side === 'home' ? 'Home' : 'Away'))}</div>${t.ml && g.state === 'pre' ? `<div class="ml ${t.ml.startsWith('-') ? 'fav' : ''}" title="Moneyline">ML ${esc(t.ml)}</div>` : ''}</div>
     ${showScore ? `<div class="sc">${t.score}</div>` : ''}
   </button>`;
 }
@@ -476,13 +480,14 @@ function gameCard(g, pick, locked, split) {
         <div class="splitlbl"><span>${split.away} picked ${esc(g.away.abbr)}</span>${split.tie ? `<span style="color:var(--gold)">${split.tie} tie</span>` : ''}<span>${split.home} picked ${esc(g.home.abbr)}</span></div>`;
     }
   }
-  return `<div class="game ${locked ? 'locked' : ''}">
-    <div class="gmeta">${statusPill(g)}${resultTag(g, pick) || `<span class="at">${esc(g.away.abbr)} @ ${esc(g.home.abbr)}</span>`}</div>
+  return `<div class="game ${locked ? 'locked' : ''} ${locked && g.state === 'pre' ? 'closed' : ''}">
+    <div class="gmeta">${statusPill(g)}${resultTag(g, pick) || (g.state === 'pre' ? (locked ? `<span class="lk">🔒 Picks closed</span>` : `<span class="at">Pick by ${fmtWhen(g.locksAt)}</span>`) : `<span class="at">${esc(g.away.abbr)} @ ${esc(g.home.abbr)}</span>`)}</div>
     <div class="mrow">${teamBtn(g, 'away', pick, locked)}
       <button class="${tieCls}" data-g="${g.id}" data-p="TIE" ${locked ? 'disabled' : ''} aria-pressed="${tieSel}" aria-label="Pick a tie">TIE<small>+10</small></button>
       ${teamBtn(g, 'home', pick, locked)}</div>${sp}
   </div>`;
 }
+const isGameLocked = g => !!g.locked || Date.now() >= g.locksAt;
 function groupByDay(games) {
   const out = []; let cur = null;
   games.forEach(g => { const d = fmtDay(g.kickoff); if (!cur || cur.d !== d) out.push(cur = { d, games: [] }); cur.games.push(g); });
@@ -494,17 +499,20 @@ async function renderPicks(main, lg, key) {
   const w = d.week;
   const draw = () => {
     const picked = d.games.filter(g => d.myPicks[g.id]).length, total = d.games.length;
-    const lockedNow = w.locked || (w.firstKick && Date.now() >= w.firstKick);
+    const open = d.games.filter(g => !isGameLocked(g));
+    const lockedNow = total > 0 && !open.length;
+    const nextLock = open.length ? Math.min(...open.map(g => g.locksAt)) : null;
+    const openUnpicked = open.filter(g => !d.myPicks[g.id]).length;
     let banner;
     if (!total) banner = `<div class="banner"><div class="ic">${ICON.clock}</div><div><b>No games yet</b><div class="t">The schedule for this week isn't out yet. Check back later.</div></div></div>`;
-    else if (!lockedNow) banner = `<div class="banner open"><div class="ic">${ICON.clock}</div><div style="flex:1;min-width:0"><b>${picked} of ${total} picked</b><div class="t">Picks lock ${fmtWhen(w.firstKick)}</div><div class="progress"><i style="width:${total ? picked / total * 100 : 0}%"></i></div></div><div class="cd" id="cd">${countdown(w.firstKick - Date.now())}</div></div>`;
+    else if (!lockedNow) banner = `<div class="banner open"><div class="ic">${ICON.clock}</div><div style="flex:1;min-width:0"><b>${picked} of ${total} picked</b><div class="t">${openUnpicked ? `${openUnpicked} still open to pick. ` : ''}Next game closes ${fmtWhen(nextLock)}</div><div class="progress"><i style="width:${total ? picked / total * 100 : 0}%"></i></div></div><div class="cd" id="cd">${countdown(nextLock - Date.now())}</div></div>`;
     else if (!w.final) banner = `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are locked · you picked ${picked} of ${total}</b><div class="t">Everyone's picks are revealed once the last game is final. Your points so far: <b style="display:inline;color:var(--text)">${d.myPoints}</b></div></div></div>`;
     else banner = `<div class="banner done"><div class="ic">${ICON.check}</div><div style="flex:1"><b>Week final · you scored ${d.myPoints} point${d.myPoints === 1 ? '' : 's'}</b><div class="t">See how everyone did on the Results tab.</div></div><a class="btn sm" href="#/l/${lg.id}/results/${w.key}">Results</a></div>`;
     const counted = d.league && !d.league.counted ? `<p class="small muted" style="margin:-4px 2px 12px">This week is before ${esc(lg.name)} started, so it doesn't count toward the standings.</p>` : '';
     const split = d.league?.split || {};
     main.innerHTML = weekBar(lg, w, 'picks') + banner + counted +
-      groupByDay(d.games).map(gr => `<div class="day">${esc(gr.d)}</div>` + gr.games.map(g => gameCard(g, d.myPicks[g.id], lockedNow, split[g.id])).join('')).join('') +
-      (total && !lockedNow ? `<p class="small muted" style="text-align:center;margin:18px 0">Picks save as you tap. Tap a pick again to clear it.</p>` : '');
+      groupByDay(d.games).map(gr => `<div class="day">${esc(gr.d)}</div>` + gr.games.map(g => gameCard(g, d.myPicks[g.id], isGameLocked(g), split[g.id])).join('')).join('') +
+      (total && !lockedNow ? `<p class="small muted" style="text-align:center;margin:18px 0">Picks save as you tap. Tap a pick again to clear it.<br>Each game closes 24 hours before kickoff.${d.games.some(g => g.oddsProvider) ? ` Moneylines from ${esc(d.games.find(g => g.oddsProvider).oddsProvider)}.` : ''}</p>` : '');
   };
   draw();
   main.onclick = async e => {
@@ -514,10 +522,16 @@ async function renderPicks(main, lg, key) {
     if (next) d.myPicks[gid] = next; else delete d.myPicks[gid];
     draw();
     try { await api('picks', { gameId: gid, pick: next }); if (navigator.vibrate) navigator.vibrate(8); }
-    catch (er) { if (prev) d.myPicks[gid] = prev; else delete d.myPicks[gid]; if (er.status === 409) { w.locked = true; } draw(); toast(er.message, 1); }
+    catch (er) { if (prev) d.myPicks[gid] = prev; else delete d.myPicks[gid]; if (er.status === 409) { const g = d.games.find(x => x.id === gid); if (g) g.locked = true; } draw(); toast(er.message, 1); }
   };
-  if (d.games.length && !w.locked && w.firstKick) {
-    S.tick = setInterval(() => { const cd = $('#cd'); if (!cd) return; const left = w.firstKick - Date.now(); if (left <= 0) { render(); } else cd.textContent = countdown(left); }, 1000);
+  if (d.games.some(g => !isGameLocked(g))) {
+    S.tick = setInterval(() => {
+      const cd = $('#cd'); if (!cd) return;
+      const open = d.games.filter(g => !isGameLocked(g));
+      if (!open.length) { clearInterval(S.tick); return draw(); }
+      const nl = Math.min(...open.map(g => g.locksAt)), left = nl - Date.now();
+      if (left <= 1000) setTimeout(draw, 1200); else cd.textContent = countdown(left);
+    }, 1000);
   }
   if (d.games.some(g => g.state === 'in') || (w.locked && !w.final && d.games.some(g => g.state === 'pre' && g.kickoff - Date.now() < 15 * 60000))) {
     S.poll = setInterval(async () => { if (document.hidden) return; try { const n = await api(`week?league=${lg.id}&key=${w.key}`); Object.assign(d, n); d.myPicks = n.myPicks; draw(); } catch {} }, 60000);
@@ -534,7 +548,7 @@ async function renderResults(main, lg, key) {
   if (!d.games.length) { main.innerHTML = html + `<div class="card empty"><div class="big">📅</div><b>No games scheduled yet.</b></div>`; return; }
   if (!L.reveal) {
     const total = d.games.length;
-    html += `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are hidden until the week is over</b><div class="t">${w.locked ? 'Picks are locked.' : `Picks lock ${fmtWhen(w.firstKick)}.`} Once every game is final, you'll see everyone's picks and scores here.</div></div></div>`;
+    html += `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are hidden until the week is over</b><div class="t">${w.locked ? 'All picks are locked.' : 'Each game closes 24 hours before kickoff.'} Once every game is final, you'll see everyone's picks and scores here.</div></div></div>`;
     html += `<section class="sec"><h2>Who's in</h2><div class="card" style="padding:4px 16px">${L.players.map(p => {
       const st = p.picked >= total ? `<span class="status ok">✓ All ${total} picked</span>` : p.picked ? `<span class="status part">${p.picked} of ${total}</span>` : `<span class="status none">${w.locked ? 'No picks' : 'Not yet'}</span>`;
       return `<div class="mem"><div class="av">${esc(initials(p.display))}</div><div class="nm"><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</div>${st}</div>`;
@@ -684,7 +698,7 @@ async function renderLeague(main, lg) {
     <section class="sec"><h2>How scoring works</h2><div class="card small"><ul class="rl" style="margin:0">
       <li>Pick the winner of every game each week, or pick a <b>tie</b>.</li>
       <li>Right winner: <b>1 point</b>. Wrong: <b>0</b>. Picked a tie and it ties: <b style="color:var(--gold)">10 points</b>.</li>
-      <li>All picks for the week lock when the <b>first game kicks off</b> (usually Thursday night). No pick = 0.</li>
+      <li>You can pick each game until <b>24 hours before it kicks off</b>. After that it's locked. No pick = 0.</li>
       <li>Nobody can see anyone else's picks until <b>every game that week is final</b>.</li>
       <li>Weekly winner has the most points that week. The season champion has the most points after the Super Bowl.</li>
       <li>Your picks count in every league you're in.</li></ul></div></section>

@@ -3,12 +3,13 @@
 // Data lives in the D1 database bound as DB. NFL schedule and scores come from ESPN's public scoreboard feed.
 //
 // Rules: pick the winner of every game (or a tie). Right winner = 1 point, wrong = 0,
-// picked a tie and the game ties = 10 points. Picks lock at the week's first kickoff and
-// stay hidden from other players until every game that week is final.
+// picked a tie and the game ties = 10 points. Each game's pick locks 24 hours before that
+// game kicks off, and picks stay hidden from other players until every game that week is final.
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 const POINTS_WIN = 1, POINTS_TIE = 10;
 const DAY = 86400000;
+const LOCK_BEFORE = 24 * 3600000;   // picks close this long before each kickoff
 
 // ---------- season layout ----------
 // Regular season weeks 1-18 (ESPN seasontype 2), then the playoffs (seasontype 3).
@@ -62,7 +63,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS weeks (key TEXT PRIMARY KEY, season INTEGER, stype INTEGER, week INTEGER, first_kick INTEGER, last_kick INTEGER, all_final INTEGER DEFAULT 0, game_count INTEGER DEFAULT 0, fetched INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, week_key TEXT NOT NULL, kickoff INTEGER, state TEXT, completed INTEGER DEFAULT 0, detail TEXT, winner TEXT,
      home_id TEXT, home_abbr TEXT, home_name TEXT, home_logo TEXT, home_color TEXT, home_score INTEGER, home_record TEXT,
-     away_id TEXT, away_abbr TEXT, away_name TEXT, away_logo TEXT, away_color TEXT, away_score INTEGER, away_record TEXT, updated INTEGER)`,
+     away_id TEXT, away_abbr TEXT, away_name TEXT, away_logo TEXT, away_color TEXT, away_score INTEGER, away_record TEXT, updated INTEGER,
+     home_ml TEXT, away_ml TEXT, odds_provider TEXT)`,
   `CREATE INDEX IF NOT EXISTS games_week ON games (week_key)`,
   `CREATE TABLE IF NOT EXISTS picks (user_id INTEGER NOT NULL, game_id TEXT NOT NULL, week_key TEXT NOT NULL, pick TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY (user_id, game_id))`,
   `CREATE INDEX IF NOT EXISTS picks_week ON picks (week_key, user_id)`,
@@ -72,6 +74,10 @@ let schemaReady = false;
 async function ensureSchema(env) {
   if (schemaReady) return;
   await env.DB.batch(SCHEMA.map(s => env.DB.prepare(s)));
+  // columns added after the first release
+  for (const col of ['home_ml TEXT', 'away_ml TEXT', 'odds_provider TEXT']) {
+    try { await env.DB.prepare(`ALTER TABLE games ADD COLUMN ${col}`).run(); } catch { /* already there */ }
+  }
   schemaReady = true;
 }
 
@@ -118,12 +124,24 @@ function parseEvent(ev, weekKey) {
     };
   };
   const home = side('home'), away = side('away');
+  // Moneyline from the sportsbook ESPN lists first (DraftKings at the moment). Shapes differ by season, so try a few.
+  const o = (c.odds || [])[0] || {};
+  const fmtML = v => {
+    if (v === undefined || v === null || v === '') return null;
+    const t = String(v).trim().toUpperCase();
+    if (t === 'EVEN' || t === 'EV') return '+100';
+    const n = parseInt(t.replace(/[^\d+-]/g, ''), 10);
+    return isNaN(n) ? null : (n > 0 ? '+' + n : String(n));
+  };
+  const ml = ha => fmtML(o.moneyline?.[ha]?.close?.odds ?? o.moneyline?.[ha]?.current?.odds ?? o.moneyline?.[ha]?.open?.odds ?? o[ha + 'TeamOdds']?.moneyLine);
+  home.ml = ml('home'); away.ml = ml('away');
   const completed = st.completed ? 1 : 0;
   let winner = null;
   if (completed && home.score !== null && away.score !== null) winner = home.score > away.score ? home.id : away.score > home.score ? away.id : 'TIE';
   return {
     id: String(ev.id), week_key: weekKey, kickoff: Date.parse(ev.date || c.date), state: st.state || 'pre', completed,
     detail: st.shortDetail || st.detail || '', winner, home, away,
+    oddsProvider: home.ml || away.ml ? (o.provider?.displayName || o.provider?.name || '') : null,
   };
 }
 
@@ -145,16 +163,19 @@ async function ensureWeek(env, key, { force = false } = {}) {
     const stmts = games.map(g => env.DB.prepare(
       `INSERT INTO games (id, week_key, kickoff, state, completed, detail, winner,
          home_id, home_abbr, home_name, home_logo, home_color, home_score, home_record,
-         away_id, away_abbr, away_name, away_logo, away_color, away_score, away_record, updated)
-       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?)
+         away_id, away_abbr, away_name, away_logo, away_color, away_score, away_record, updated, home_ml, away_ml, odds_provider)
+       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?, ?,?,?)
        ON CONFLICT(id) DO UPDATE SET week_key=excluded.week_key, kickoff=excluded.kickoff, state=excluded.state, completed=excluded.completed,
          detail=excluded.detail, winner=excluded.winner, home_id=excluded.home_id, home_abbr=excluded.home_abbr, home_name=excluded.home_name,
          home_logo=excluded.home_logo, home_color=excluded.home_color, home_score=excluded.home_score, home_record=excluded.home_record,
          away_id=excluded.away_id, away_abbr=excluded.away_abbr, away_name=excluded.away_name, away_logo=excluded.away_logo,
-         away_color=excluded.away_color, away_score=excluded.away_score, away_record=excluded.away_record, updated=excluded.updated`
+         away_color=excluded.away_color, away_score=excluded.away_score, away_record=excluded.away_record, updated=excluded.updated,
+         home_ml=COALESCE(excluded.home_ml, games.home_ml), away_ml=COALESCE(excluded.away_ml, games.away_ml),
+         odds_provider=COALESCE(excluded.odds_provider, games.odds_provider)`
     ).bind(g.id, g.week_key, g.kickoff, g.state, g.completed, g.detail, g.winner,
       g.home.id, g.home.abbr, g.home.name, g.home.logo, g.home.color, g.home.score, g.home.record,
-      g.away.id, g.away.abbr, g.away.name, g.away.logo, g.away.color, g.away.score, g.away.record, t));
+      g.away.id, g.away.abbr, g.away.name, g.away.logo, g.away.color, g.away.score, g.away.record, t,
+      g.home.ml, g.away.ml, g.oddsProvider));
     const kicks = games.map(g => g.kickoff);
     const allFinal = games.length > 0 && games.every(g => g.state === 'post') ? 1 : 0;
     stmts.push(env.DB.prepare(
@@ -170,14 +191,17 @@ async function ensureWeek(env, key, { force = false } = {}) {
   return row;
 }
 
-const isLocked = w => !!(w && w.first_kick && now() >= w.first_kick);
+// A game locks 24h before its kickoff. A week is fully locked once its last game has locked.
+const gameLocked = g => !!(g && g.kickoff && now() >= g.kickoff - LOCK_BEFORE);
+const isLocked = w => !!(w && w.last_kick && now() >= w.last_kick - LOCK_BEFORE);
 const isFinal = w => !!(w && w.all_final);
 
 function gameOut(g) {
   return {
-    id: g.id, kickoff: g.kickoff, state: g.state, completed: !!g.completed, detail: g.detail, winner: g.winner,
-    home: { id: g.home_id, abbr: g.home_abbr, name: g.home_name, logo: g.home_logo, color: g.home_color, score: g.home_score, record: g.home_record },
-    away: { id: g.away_id, abbr: g.away_abbr, name: g.away_name, logo: g.away_logo, color: g.away_color, score: g.away_score, record: g.away_record },
+    id: g.id, kickoff: g.kickoff, locksAt: g.kickoff - LOCK_BEFORE, locked: gameLocked(g), state: g.state, completed: !!g.completed, detail: g.detail, winner: g.winner,
+    oddsProvider: g.odds_provider || null,
+    home: { id: g.home_id, abbr: g.home_abbr, name: g.home_name, logo: g.home_logo, color: g.home_color, score: g.home_score, record: g.home_record, ml: g.home_ml || null },
+    away: { id: g.away_id, abbr: g.away_abbr, name: g.away_name, logo: g.away_logo, color: g.away_color, score: g.away_score, record: g.away_record, ml: g.away_ml || null },
   };
 }
 function scorePick(pick, g) {
@@ -466,7 +490,8 @@ async function api(req, env, url) {
     const i = weeks.findIndex(w => w.key === key);
     const locked = isLocked(row), final = isFinal(row);
     const out = {
-      week: { key, label: meta.label, season: meta.season, firstKick: row?.first_kick || null, locked, final, current: key === cur.key,
+      week: { key, label: meta.label, season: meta.season, firstKick: row?.first_kick || null, firstLock: row?.first_kick ? row.first_kick - LOCK_BEFORE : null,
+        lastLock: row?.last_kick ? row.last_kick - LOCK_BEFORE : null, locked, final, current: key === cur.key,
         prev: weeks[i - 1]?.key || null, next: weeks[i + 1]?.key || null, gameCount: games.length },
       games: games.map(gameOut), myPicks, now: now(),
     };
@@ -513,8 +538,9 @@ async function api(req, env, url) {
     const b = await body(req);
     const g = await env.DB.prepare(`SELECT * FROM games WHERE id=?`).bind(String(b.gameId || '')).first();
     if (!g) return bad('Game not found.');
-    const row = await ensureWeek(env, g.week_key);
-    if (isLocked(row)) return bad('Picks for this week are locked. The first game has kicked off.', 409);
+    await ensureWeek(env, g.week_key);   // refresh in case the kickoff time moved
+    const fresh = await env.DB.prepare(`SELECT * FROM games WHERE id=?`).bind(g.id).first();
+    if (gameLocked(fresh)) return bad(`${fresh.away_abbr} @ ${fresh.home_abbr} is locked. Picks close 24 hours before kickoff.`, 409);
     const pick = b.pick === null || b.pick === '' ? null : String(b.pick);
     if (pick === null) {
       await env.DB.prepare(`DELETE FROM picks WHERE user_id=? AND game_id=?`).bind(user.id, g.id).run();
