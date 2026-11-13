@@ -7,6 +7,7 @@
 // game kicks off, and picks stay hidden from other players until every game that week is final.
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
+const ESPN_STATS = 'https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/statistics/byteam';
 const POINTS_WIN = 1, POINTS_TIE = 10;
 const DAY = 86400000;
 const LOCK_BEFORE = 24 * 3600000;   // picks close this long before each kickoff
@@ -64,7 +65,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, week_key TEXT NOT NULL, kickoff INTEGER, state TEXT, completed INTEGER DEFAULT 0, detail TEXT, winner TEXT,
      home_id TEXT, home_abbr TEXT, home_name TEXT, home_logo TEXT, home_color TEXT, home_score INTEGER, home_record TEXT,
      away_id TEXT, away_abbr TEXT, away_name TEXT, away_logo TEXT, away_color TEXT, away_score INTEGER, away_record TEXT, updated INTEGER,
-     home_ml TEXT, away_ml TEXT, odds_provider TEXT)`,
+     home_ml TEXT, away_ml TEXT, odds_provider TEXT, home_spread TEXT, away_spread TEXT, over_under TEXT)`,
   `CREATE INDEX IF NOT EXISTS games_week ON games (week_key)`,
   `CREATE TABLE IF NOT EXISTS picks (user_id INTEGER NOT NULL, game_id TEXT NOT NULL, week_key TEXT NOT NULL, pick TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY (user_id, game_id))`,
   `CREATE INDEX IF NOT EXISTS picks_week ON picks (week_key, user_id)`,
@@ -75,7 +76,7 @@ async function ensureSchema(env) {
   if (schemaReady) return;
   await env.DB.batch(SCHEMA.map(s => env.DB.prepare(s)));
   // columns added after the first release
-  for (const col of ['home_ml TEXT', 'away_ml TEXT', 'odds_provider TEXT']) {
+  for (const col of ['home_ml TEXT', 'away_ml TEXT', 'odds_provider TEXT', 'home_spread TEXT', 'away_spread TEXT', 'over_under TEXT']) {
     try { await env.DB.prepare(`ALTER TABLE games ADD COLUMN ${col}`).run(); } catch { /* already there */ }
   }
   schemaReady = true;
@@ -135,13 +136,24 @@ function parseEvent(ev, weekKey) {
   };
   const ml = ha => fmtML(o.moneyline?.[ha]?.close?.odds ?? o.moneyline?.[ha]?.current?.odds ?? o.moneyline?.[ha]?.open?.odds ?? o[ha + 'TeamOdds']?.moneyLine);
   home.ml = ml('home'); away.ml = ml('away');
+  // Point spread (how many points a team is favored by) and the over/under total.
+  const num = v => { if (v === undefined || v === null || v === '') return null; const n = parseFloat(String(v).replace(/^[ou]/i, '')); return isNaN(n) ? null : n; };
+  const fmtLine = n => n === null ? null : n === 0 ? 'PK' : (n > 0 ? '+' : '') + n;
+  let hs = num(o.pointSpread?.home?.close?.line ?? o.pointSpread?.home?.current?.line ?? o.pointSpread?.home?.open?.line);
+  let as = num(o.pointSpread?.away?.close?.line ?? o.pointSpread?.away?.current?.line ?? o.pointSpread?.away?.open?.line);
+  if (hs === null && as === null && typeof o.spread === 'number') { hs = o.spread; as = -o.spread; }   // ESPN's spread is the home team's line
+  if (hs === null && as !== null) hs = -as;
+  if (as === null && hs !== null) as = -hs;
+  home.spread = fmtLine(hs); away.spread = fmtLine(as);
+  const ou = num(o.overUnder ?? o.total?.over?.close?.line ?? o.total?.over?.current?.line);
+  const overUnder = ou === null ? null : String(ou);
   const completed = st.completed ? 1 : 0;
   let winner = null;
   if (completed && home.score !== null && away.score !== null) winner = home.score > away.score ? home.id : away.score > home.score ? away.id : 'TIE';
   return {
     id: String(ev.id), week_key: weekKey, kickoff: Date.parse(ev.date || c.date), state: st.state || 'pre', completed,
     detail: st.shortDetail || st.detail || '', winner, home, away,
-    oddsProvider: home.ml || away.ml ? (o.provider?.displayName || o.provider?.name || '') : null,
+    oddsProvider: home.ml || away.ml || home.spread ? (o.provider?.displayName || o.provider?.name || '') : null, overUnder,
   };
 }
 
@@ -155,6 +167,7 @@ async function ensureWeek(env, key, { force = false } = {}) {
   if (!row) maxAge = 0;
   else if (row.all_final) maxAge = row.last_kick > t - 3 * DAY ? 6 * 3600000 : Infinity;   // allow late stat corrections
   else if (row.game_count && t >= row.first_kick - 15 * 60000 && t <= row.last_kick + 6 * 3600000) maxAge = 60000; // games are on
+  else if (row.game_count && row.last_kick > t) maxAge = 5 * 60000;   // upcoming games: keep lines fresh
   else maxAge = 30 * 60000;
   if (!force && row && t - row.fetched < maxAge) return row;
   try {
@@ -163,19 +176,21 @@ async function ensureWeek(env, key, { force = false } = {}) {
     const stmts = games.map(g => env.DB.prepare(
       `INSERT INTO games (id, week_key, kickoff, state, completed, detail, winner,
          home_id, home_abbr, home_name, home_logo, home_color, home_score, home_record,
-         away_id, away_abbr, away_name, away_logo, away_color, away_score, away_record, updated, home_ml, away_ml, odds_provider)
-       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?, ?,?,?)
+         away_id, away_abbr, away_name, away_logo, away_color, away_score, away_record, updated, home_ml, away_ml, odds_provider, home_spread, away_spread, over_under)
+       VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?, ?,?,?, ?,?,?)
        ON CONFLICT(id) DO UPDATE SET week_key=excluded.week_key, kickoff=excluded.kickoff, state=excluded.state, completed=excluded.completed,
          detail=excluded.detail, winner=excluded.winner, home_id=excluded.home_id, home_abbr=excluded.home_abbr, home_name=excluded.home_name,
          home_logo=excluded.home_logo, home_color=excluded.home_color, home_score=excluded.home_score, home_record=excluded.home_record,
          away_id=excluded.away_id, away_abbr=excluded.away_abbr, away_name=excluded.away_name, away_logo=excluded.away_logo,
          away_color=excluded.away_color, away_score=excluded.away_score, away_record=excluded.away_record, updated=excluded.updated,
          home_ml=COALESCE(excluded.home_ml, games.home_ml), away_ml=COALESCE(excluded.away_ml, games.away_ml),
-         odds_provider=COALESCE(excluded.odds_provider, games.odds_provider)`
+         odds_provider=COALESCE(excluded.odds_provider, games.odds_provider),
+         home_spread=COALESCE(excluded.home_spread, games.home_spread), away_spread=COALESCE(excluded.away_spread, games.away_spread),
+         over_under=COALESCE(excluded.over_under, games.over_under)`
     ).bind(g.id, g.week_key, g.kickoff, g.state, g.completed, g.detail, g.winner,
       g.home.id, g.home.abbr, g.home.name, g.home.logo, g.home.color, g.home.score, g.home.record,
       g.away.id, g.away.abbr, g.away.name, g.away.logo, g.away.color, g.away.score, g.away.record, t,
-      g.home.ml, g.away.ml, g.oddsProvider));
+      g.home.ml, g.away.ml, g.oddsProvider, g.home.spread, g.away.spread, g.overUnder));
     const kicks = games.map(g => g.kickoff);
     const allFinal = games.length > 0 && games.every(g => g.state === 'post') ? 1 : 0;
     stmts.push(env.DB.prepare(
@@ -193,15 +208,71 @@ async function ensureWeek(env, key, { force = false } = {}) {
 
 // A game locks 24h before its kickoff. A week is fully locked once its last game has locked.
 const gameLocked = g => !!(g && g.kickoff && now() >= g.kickoff - LOCK_BEFORE);
+// ---------- team stats ----------
+// One request returns every team's season stats (theirs and their opponents'). We work out the league ranks ourselves.
+const STAT_DEFS = [
+  // key, label, category, split ('0' = team, '900' = opponents), stat name, higher is better?, decimals
+  ['ppg',   'Points / game',          'passing',       '0',   'totalPointsPerGame',     true,  1],
+  ['ypg',   'Total yards / game',     'passing',       '0',   'yardsPerGame',           true,  1],
+  ['pass',  'Pass yards / game',   'passing',       '0',   'netPassingYardsPerGame', true,  1],
+  ['rush',  'Rush yards / game',   'rushing',       '0',   'rushingYardsPerGame',    true,  1],
+  ['third', '3rd down %',    'miscellaneous', '0',   'thirdDownConvPct',       true,  1],
+  ['papg',  'Points allowed / game',  'passing',       '900', 'totalPointsPerGame',     false, 1],
+  ['yapg',  'Yards allowed / game',   'passing',       '900', 'yardsPerGame',           false, 1],
+  ['sacks', 'Sacks (defense)',         'passing',       '900', 'sacks',                  true,  0],
+  ['to',    'Turnover margin',    'miscellaneous', '0',   'turnOverDifferential',   true,  0],
+];
+async function getTeamStats(env, season, force = false) {
+  const k = `stats-${season}`;
+  const row = await env.DB.prepare(`SELECT v FROM meta WHERE k=?`).bind(k).first();
+  const cached = row ? JSON.parse(row.v) : null;
+  if (cached && !force && now() - cached.fetched < 30 * 60000) return cached;
+  try {
+    const url = (env.ESPN_STATS || ESPN_STATS) + `?region=us&lang=en&contentorigin=espn&isqualified=true&page=1&limit=40&category=offense&season=${season}&seasontype=2`;
+    const r = await fetch(url, { headers: { 'user-agent': 'PickemClub/1.0' } });
+    if (!r.ok) throw new Error('ESPN stats ' + r.status);
+    const d = await r.json();
+    const names = {}; (d.categories || []).forEach(c => { names[c.name] = c.names || []; });
+    const raw = {};   // teamId -> key -> value
+    for (const t of d.teams || []) {
+      const id = String(t.team?.id || ''); if (!id) continue;
+      raw[id] = {};
+      for (const [key, , cat, split, stat] of STAT_DEFS) {
+        const c = (t.categories || []).find(x => x.name === cat && String(x.splitId) === split);
+        const i = (names[cat] || []).indexOf(stat);
+        const v = c && i >= 0 ? Number(c.values?.[i]) : NaN;
+        if (!isNaN(v)) raw[id][key] = v;
+      }
+    }
+    const teams = {}; Object.keys(raw).forEach(id => teams[id] = {});
+    for (const [key, , , , , higher, dp] of STAT_DEFS) {
+      const vals = Object.keys(raw).filter(id => raw[id][key] !== undefined).map(id => [id, raw[id][key]]);
+      vals.sort((a, b) => higher ? b[1] - a[1] : a[1] - b[1]);
+      vals.forEach(([id, v]) => {
+        const rank = 1 + vals.filter(x => higher ? x[1] > v : x[1] < v).length;
+        const tied = vals.filter(x => x[1] === v).length > 1;
+        teams[id][key] = { v: Math.round(v * 10 ** dp) / 10 ** dp, rank, tied };
+      });
+    }
+    const out = { season, fetched: now(), count: vals_count(teams), labels: STAT_DEFS.map(([key, label, , , , higher, dp]) => ({ key, label, higher, dp })), teams };
+    await env.DB.prepare(`INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).bind(k, JSON.stringify(out)).run();
+    return out;
+  } catch (e) {
+    if (cached) return cached;
+    throw e;
+  }
+}
+const vals_count = teams => Object.keys(teams).length;
+
 const isLocked = w => !!(w && w.last_kick && now() >= w.last_kick - LOCK_BEFORE);
 const isFinal = w => !!(w && w.all_final);
 
 function gameOut(g) {
   return {
     id: g.id, kickoff: g.kickoff, locksAt: g.kickoff - LOCK_BEFORE, locked: gameLocked(g), state: g.state, completed: !!g.completed, detail: g.detail, winner: g.winner,
-    oddsProvider: g.odds_provider || null,
-    home: { id: g.home_id, abbr: g.home_abbr, name: g.home_name, logo: g.home_logo, color: g.home_color, score: g.home_score, record: g.home_record, ml: g.home_ml || null },
-    away: { id: g.away_id, abbr: g.away_abbr, name: g.away_name, logo: g.away_logo, color: g.away_color, score: g.away_score, record: g.away_record, ml: g.away_ml || null },
+    oddsProvider: g.odds_provider || null, overUnder: g.over_under || null,
+    home: { id: g.home_id, abbr: g.home_abbr, name: g.home_name, logo: g.home_logo, color: g.home_color, score: g.home_score, record: g.home_record, ml: g.home_ml || null, spread: g.home_spread || null },
+    away: { id: g.away_id, abbr: g.away_abbr, name: g.away_name, logo: g.away_logo, color: g.away_color, score: g.away_score, record: g.away_record, ml: g.away_ml || null, spread: g.away_spread || null },
   };
 }
 function scorePick(pick, g) {
@@ -533,6 +604,13 @@ async function api(req, env, url) {
     }
     return json(out);
   }
+  if (path === '/api/stats' && method === 'GET') {
+    need();
+    const cur = await getCurrent(env);
+    const season = +url.searchParams.get('season') || cur.season;
+    try { return json(await getTeamStats(env, season)); }
+    catch { return bad('Team stats aren’t available right now. Try again in a minute.', 502); }
+  }
   if (path === '/api/picks' && method === 'POST') {
     need();
     const b = await body(req);
@@ -571,8 +649,9 @@ export default {
     const cur = await getCurrent(env, true);
     const weeks = seasonWeeks(cur.season);
     const i = weeks.findIndex(w => w.key === cur.key);
-    for (const w of [weeks[i - 1], weeks[i]].filter(Boolean)) {
+    for (const w of [weeks[i - 1], weeks[i], weeks[i + 1]].filter(Boolean)) {
       try { await ensureWeek(env, w.key); } catch {}
     }
+    try { await getTeamStats(env, cur.season); } catch {}
   },
 };

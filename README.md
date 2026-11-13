@@ -6,7 +6,8 @@ An NFL pick'em app for you and your friends. Make a league, invite people with a
 - Pick the winner of every game, or pick a **tie**.
 - Right winner: **1 point**. Wrong: **0**. Picked a tie and the game ties: **10 points**. No pick: 0.
 - You can pick each game until **24 hours before it kicks off**. Then that game locks.
-- Each game shows both teams' **moneylines** (from the sportsbook ESPN lists, currently DraftKings) to help you pick.
+- Each game shows the **point spread** (who's favored and by how much), the **over/under** and both **moneylines**, from the sportsbook ESPN lists (currently DraftKings). Lines refresh every few minutes, and the app picks up changes while you have it open.
+- Tap **Team stats** on any game to compare the two teams (points, yards, passing, rushing, 3rd downs, points and yards allowed, sacks, turnover margin) with each team's NFL rank. Stats come from ESPN and refresh every 30 minutes.
 - Nobody can see anyone else's picks until **every game that week is final**. Then the whole pick sheet is revealed.
 - Each week has a weekly winner. The season champion has the most points after the Super Bowl. Playoff games count.
 - A player's picks count in every league they belong to.

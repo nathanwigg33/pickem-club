@@ -147,9 +147,26 @@ input.in:focus,select.in:focus{border-color:var(--turf);box-shadow:0 0 0 3px var
 .team .nm{min-width:0;flex:1}
 .team .ab{font-family:var(--display);font-weight:800;font-size:22px;line-height:1;letter-spacing:.3px}
 .team .rec{font-size:12px;color:var(--muted);margin-top:2px}
-.team .ml{display:inline-block;margin-top:5px;padding:1px 7px;border-radius:6px;background:var(--bg);border:1px solid var(--line);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text2)}
+.team .odds{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+.team.home .odds{justify-content:flex-end}
+.team .ml{display:inline-block;padding:1px 7px;border-radius:6px;background:var(--bg);border:1px solid var(--line);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text2)}
 .team .ml.fav{color:var(--text)}
 .gmeta .lk{color:var(--gold);font-weight:600}
+.gfoot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px 0;font-size:13px;color:var(--text2)}
+.gfoot b{color:var(--text)}
+.sbtn{flex:none;display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:var(--surface2);border:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--text2)}
+.sbtn.on{color:var(--turf);border-color:rgba(47,201,119,.4)}
+.sbtn svg{transition:transform .15s}.sbtn.on svg{transform:rotate(180deg)}
+.stats{margin:10px 0 2px;border-top:1px solid var(--line);padding-top:6px}
+.srow{display:grid;grid-template-columns:1fr 1.25fr 1fr;align-items:center;gap:6px;padding:6px 2px;border-bottom:1px solid rgba(39,50,67,.6)}
+.srow:last-child{border-bottom:0}
+.srow.hd{font-family:var(--display);font-weight:800;font-size:17px;border-bottom:1px solid var(--line)}
+.sl{text-align:center;font-size:12px;color:var(--muted);line-height:1.2}
+.sv{font-weight:700;font-variant-numeric:tabular-nums;font-size:15px}
+.sv.h{text-align:right}
+.sv small{display:block;font-size:11.5px;font-weight:600;color:var(--muted)}
+.sv.better{color:var(--turf)} .sv.better small{color:var(--turf);opacity:.85}
+.snote{font-size:11.5px;color:var(--muted);text-align:center;padding-top:6px}
 .team .sc{font-family:var(--display);font-weight:700;font-size:26px;color:var(--text2)}
 .team.win .sc{color:var(--text)}
 .team.lose{opacity:.62}
@@ -282,7 +299,7 @@ const ICON = {
 };
 
 // ---------- state & routing ----------
-const S = { me: null, leagues: [], current: null, startOptions: [], week: null, league: null, tick: null, poll: null };
+const S = { openStats: new Set(), stats: null, statsAt: 0, statsErr: null, me: null, leagues: [], current: null, startOptions: [], week: null, league: null, tick: null, poll: null };
 const pendingJoin = () => sessionStorage.getItem('join');
 (function captureJoin() {
   const p = new URLSearchParams(location.search), c = p.get('join');
@@ -453,7 +470,7 @@ function teamBtn(g, side, pick, locked) {
   const tbd = !t.id || t.abbr === 'TBD';
   return `<button class="${cls.join(' ')}" data-g="${g.id}" data-p="${esc(t.id)}" ${locked || tbd ? 'disabled' : ''} aria-pressed="${sel}" aria-label="${esc(t.name)}">
     ${t.logo ? `<img src="${esc(t.logo)}" alt="" loading="lazy">` : ''}
-    <div class="nm"><div class="ab">${esc(t.abbr)}</div><div class="rec">${esc(t.record || (side === 'home' ? 'Home' : 'Away'))}</div>${t.ml && g.state === 'pre' ? `<div class="ml ${t.ml.startsWith('-') ? 'fav' : ''}" title="Moneyline">ML ${esc(t.ml)}</div>` : ''}</div>
+    <div class="nm"><div class="ab">${esc(t.abbr)}</div><div class="rec">${esc(t.record || (side === 'home' ? 'Home' : 'Away'))}</div>${g.state === 'pre' && (t.ml || t.spread) ? `<div class="odds">${t.spread ? `<span class="ml ${t.spread.startsWith('-') ? 'fav' : ''}" title="Point spread">${esc(t.spread)}</span>` : ''}${t.ml ? `<span class="ml ${t.ml.startsWith('-') ? 'fav' : ''}" title="Moneyline">ML ${esc(t.ml)}</span>` : ''}</div>` : ''}</div>
     ${showScore ? `<div class="sc">${t.score}</div>` : ''}
   </button>`;
 }
@@ -485,7 +502,44 @@ function gameCard(g, pick, locked, split) {
     <div class="mrow">${teamBtn(g, 'away', pick, locked)}
       <button class="${tieCls}" data-g="${g.id}" data-p="TIE" ${locked ? 'disabled' : ''} aria-pressed="${tieSel}" aria-label="Pick a tie">TIE<small>+10</small></button>
       ${teamBtn(g, 'home', pick, locked)}</div>${sp}
+    ${gameFoot(g)}${S.openStats.has(g.id) ? statsPanel(g) : ''}
   </div>`;
+}
+function favoredText(g) {
+  const hs = g.home.spread, as = g.away.spread;
+  if (!hs && !as) return '';
+  if (hs === 'PK') return 'Even matchup (pick’em)';
+  const fav = (hs || '').startsWith('-') ? g.home : g.away;
+  return `<b>${esc(fav.abbr)}</b> favored by <b>${esc((fav.spread || '').replace('-', ''))}</b>`;
+}
+function gameFoot(g) {
+  const parts = [];
+  if (g.state === 'pre') { const f = favoredText(g); if (f) parts.push(f); if (g.overUnder) parts.push(`O/U ${esc(g.overUnder)}`); }
+  const on = S.openStats.has(g.id);
+  return `<div class="gfoot"><span>${parts.join(' · ')}</span><button class="sbtn ${on ? 'on' : ''}" data-stats="${g.id}" aria-expanded="${on}">Team stats ${ICON.down}</button></div>`;
+}
+function statsPanel(g) {
+  if (S.statsErr) return `<div class="stats snote">${esc(S.statsErr)}</div>`;
+  if (!S.stats) return `<div class="stats snote">Loading stats…</div>`;
+  const A = S.stats.teams[g.away.id] || {}, H = S.stats.teams[g.home.id] || {};
+  const ord = n => { const v = n % 100; return n + (v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'); };
+  const cell = (x, other, side) => {
+    if (!x) return `<div class="sv ${side}">—</div>`;
+    const better = other && x.rank < other.rank;
+    return `<div class="sv ${side} ${better ? 'better' : ''}">${x.v}${x._k === 'third' ? '%' : ''}<small>${x.tied ? 'T-' : ''}${ord(x.rank)} in NFL</small></div>`;
+  };
+  const rows = S.stats.labels.map(l => {
+    const a = A[l.key] && { ...A[l.key], _k: l.key }, h = H[l.key] && { ...H[l.key], _k: l.key };
+    if (a && l.key === 'to' && a.v > 0) a.v = '+' + a.v; if (h && l.key === 'to' && h.v > 0) h.v = '+' + h.v;
+    return `<div class="srow">${cell(a, h, 'a')}<div class="sl">${esc(l.label)}</div>${cell(h, a, 'h')}</div>`;
+  }).join('');
+  return `<div class="stats"><div class="srow hd"><div>${esc(g.away.abbr)}</div><div class="sl">${g.away.record || g.home.record ? `${esc(g.away.record || '–')} &nbsp;vs&nbsp; ${esc(g.home.record || '–')}` : 'Season stats'}</div><div class="sv h" style="font-size:17px">${esc(g.home.abbr)}</div></div>${rows}
+    <div class="snote">${S.stats.season} regular season · green = better rank · updated ${fmtTime(S.stats.fetched)}</div></div>`;
+}
+async function loadStats(force) {
+  if (!force && S.stats && Date.now() - S.statsAt < 10 * 60000) return;
+  try { S.stats = await api('stats'); S.statsAt = Date.now(); S.statsErr = null; }
+  catch (e) { S.statsErr = e.message; }
 }
 const isGameLocked = g => !!g.locked || Date.now() >= g.locksAt;
 function groupByDay(games) {
@@ -512,10 +566,18 @@ async function renderPicks(main, lg, key) {
     const split = d.league?.split || {};
     main.innerHTML = weekBar(lg, w, 'picks') + banner + counted +
       groupByDay(d.games).map(gr => `<div class="day">${esc(gr.d)}</div>` + gr.games.map(g => gameCard(g, d.myPicks[g.id], isGameLocked(g), split[g.id])).join('')).join('') +
-      (total && !lockedNow ? `<p class="small muted" style="text-align:center;margin:18px 0">Picks save as you tap. Tap a pick again to clear it.<br>Each game closes 24 hours before kickoff.${d.games.some(g => g.oddsProvider) ? ` Moneylines from ${esc(d.games.find(g => g.oddsProvider).oddsProvider)}.` : ''}</p>` : '');
+      (total && !lockedNow ? `<p class="small muted" style="text-align:center;margin:18px 0">Picks save as you tap. Tap a pick again to clear it.<br>Each game closes 24 hours before kickoff.${d.games.some(g => g.oddsProvider) ? `<br>Lines from ${esc(d.games.find(g => g.oddsProvider).oddsProvider)}, refreshed every few minutes.` : ''}</p>` : '');
   };
   draw();
   main.onclick = async e => {
+    const sb = e.target.closest('button[data-stats]');
+    if (sb) {
+      const id = sb.dataset.stats;
+      if (S.openStats.has(id)) S.openStats.delete(id); else S.openStats.add(id);
+      draw();
+      if (S.openStats.has(id) && (!S.stats || Date.now() - S.statsAt > 10 * 60000)) { await loadStats(); draw(); }
+      return;
+    }
     const b = e.target.closest('button[data-g]'); if (!b || b.disabled) return;
     const gid = b.dataset.g, prev = d.myPicks[gid] || null;
     const next = prev === b.dataset.p ? null : b.dataset.p;
@@ -533,8 +595,18 @@ async function renderPicks(main, lg, key) {
       if (left <= 1000) setTimeout(draw, 1200); else cd.textContent = countdown(left);
     }, 1000);
   }
-  if (d.games.some(g => g.state === 'in') || (w.locked && !w.final && d.games.some(g => g.state === 'pre' && g.kickoff - Date.now() < 15 * 60000))) {
-    S.poll = setInterval(async () => { if (document.hidden) return; try { const n = await api(`week?league=${lg.id}&key=${w.key}`); Object.assign(d, n); d.myPicks = n.myPicks; draw(); } catch {} }, 60000);
+  const live = d.games.some(g => g.state === 'in' || (g.state === 'pre' && g.kickoff - Date.now() < 15 * 60000));
+  const upcoming = d.games.some(g => g.state === 'pre');
+  if (live || upcoming) {
+    S.poll = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const n = await api(`week?league=${lg.id}&key=${w.key}`);
+        d.games = n.games; d.myPicks = n.myPicks; d.myPoints = n.myPoints; d.league = n.league; Object.assign(w, n.week);
+        if (S.openStats.size) await loadStats();
+        draw();
+      } catch {}
+    }, live ? 60000 : 120000);
   }
 }
 
