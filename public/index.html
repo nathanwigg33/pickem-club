@@ -374,7 +374,7 @@ async function renderAuth(app, mode = 'login') {
     catch { sessionStorage.removeItem('join'); }
   }
   app.innerHTML = `<main class="wrap" style="max-width:440px">
-    <div class="hero"><img src="/icon-512.png" alt=""><h1>Pick'em <span>Club</span></h1><p>Pick every NFL game with your friends. Picks stay secret until the week is over.</p></div>
+    <div class="hero"><img src="/icon-512.png" alt=""><h1>Pick'em <span>Club</span></h1><p>Pick every NFL game with your friends. Everyone's picks stay secret until each game is over.</p></div>
     <div class="rules"><div><b>1</b><span>point for picking the winner</span></div><div><b>0</b><span>for a wrong pick</span></div><div><b style="color:var(--gold)">10</b><span>if you call a tie</span></div></div>
     <div class="card sec">${inviteHtml}
       <div class="seg"><button class="${mode === 'login' ? 'on' : ''}" data-m="login">Sign in</button><button class="${mode === 'signup' ? 'on' : ''}" data-m="signup">Create account</button></div>
@@ -562,7 +562,7 @@ async function renderPicks(main, lg, key) {
     let banner;
     if (!total) banner = `<div class="banner"><div class="ic">${ICON.clock}</div><div><b>No games yet</b><div class="t">The schedule for this week isn't out yet. Check back later.</div></div></div>`;
     else if (!lockedNow) banner = `<div class="banner open"><div class="ic">${ICON.clock}</div><div style="flex:1;min-width:0"><b>${picked} of ${total} picked</b><div class="t">${openUnpicked ? `${openUnpicked} still open to pick. ` : ''}Next game closes ${fmtWhen(nextLock)}</div><div class="progress"><i style="width:${total ? picked / total * 100 : 0}%"></i></div></div><div class="cd" id="cd">${countdown(nextLock - Date.now())}</div></div>`;
-    else if (!w.final) banner = `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are locked · you picked ${picked} of ${total}</b><div class="t">Everyone's picks are revealed once the last game is final. Your points so far: <b style="display:inline;color:var(--text)">${d.myPoints}</b></div></div></div>`;
+    else if (!w.final) banner = `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are locked · you picked ${picked} of ${total}</b><div class="t">Everyone's picks for a game show up on Results as soon as it ends. Your points so far: <b style="display:inline;color:var(--text)">${d.myPoints}</b></div></div></div>`;
     else banner = `<div class="banner done"><div class="ic">${ICON.check}</div><div style="flex:1"><b>Week final · you scored ${d.myPoints} point${d.myPoints === 1 ? '' : 's'}</b><div class="t">See how everyone did on the Results tab.</div></div><a class="btn sm" href="#/l/${lg.id}/results/${w.key}">Results</a></div>`;
     const counted = d.league && !d.league.counted ? `<p class="small muted" style="margin:-4px 2px 12px">This week is before ${esc(lg.name)} started, so it doesn't count toward the standings.</p>` : '';
     const split = d.league?.split || {};
@@ -620,9 +620,10 @@ async function renderResults(main, lg, key) {
   if (!L) { main.innerHTML = html + `<div class="card empty">League not found.</div>`; return; }
   if (L && !L.counted) html += `<p class="small muted" style="margin:-4px 2px 12px">This week is before ${esc(lg.name)} started, so it doesn't count toward the standings.</p>`;
   if (!d.games.length) { main.innerHTML = html + `<div class="card empty"><div class="big">📅</div><b>No games scheduled yet.</b></div>`; return; }
-  if (!L.reveal) {
+  resultsPoll(lg, w, d.games);
+  if (!L.anyDone) {
     const total = d.games.length;
-    html += `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are hidden until the week is over</b><div class="t">${w.locked ? 'All picks are locked.' : 'Each game closes 24 hours before kickoff.'} Once every game is final, you'll see everyone's picks and scores here.</div></div></div>`;
+    html += `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>No games are final yet</b><div class="t">${w.locked ? 'All picks are locked.' : 'Each game closes 24 hours before kickoff.'} As soon as a game ends, everyone's pick for it shows up here and the leaderboard updates.</div></div></div>`;
     html += `<section class="sec"><h2>Who's in</h2><div class="card" style="padding:4px 16px">${L.players.map(p => {
       const st = p.picked >= total ? `<span class="status ok">✓ All ${total} picked</span>` : p.picked ? `<span class="status part">${p.picked} of ${total}</span>` : `<span class="status none">${w.locked ? 'No picks' : 'Not yet'}</span>`;
       return `<div class="mem"><div class="av">${esc(initials(p.display))}</div><div class="nm"><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</div>${st}</div>`;
@@ -630,17 +631,21 @@ async function renderResults(main, lg, key) {
     if (w.locked) html += `<p class="small muted" style="text-align:center">Your points so far this week: <b style="color:var(--text)">${d.myPoints}</b></p>`;
     main.innerHTML = html; return;
   }
-  // final: leaderboard + pick sheet
+  // leaderboard + pick sheet for the games that are over
   const P = L.players;
-  html += `<section class="sec"><h2>Week leaderboard</h2><div class="card" style="padding:4px 8px"><table class="tbl"><thead><tr><th></th><th>Player</th><th class="n">Right</th><th class="n">Pts</th></tr></thead><tbody>${P.map(p =>
-    `<tr class="${p.id === S.me.id ? 'me' : ''} ${p.rank === 1 && p.points > 0 ? 'medal1' : ''}"><td class="rk">${p.rank === 1 && p.points > 0 ? '🏆' : p.rank}</td><td><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}${p.picked ? '' : '<div class="small muted">No picks</div>'}</td><td class="n">${p.correct}–${p.wrong}</td><td class="n pts">${p.points}</td></tr>`).join('')}</tbody></table></div></section>`;
+  if (!L.reveal) {
+    const live = d.games.filter(g => g.state === 'in').length;
+    html += `<div class="banner open"><div class="ic">${ICON.clock}</div><div><b>${L.doneCount} of ${d.games.length} games final${live ? ` · ${live} live now` : ''}</b><div class="t">Picks show up for each game as soon as it ends. Picks for games still to finish stay hidden. This page updates on its own.</div></div></div>`;
+  }
+  html += `<section class="sec"><h2>${L.reveal ? 'Week leaderboard' : 'Leaderboard so far'}</h2><div class="card" style="padding:4px 8px"><table class="tbl"><thead><tr><th></th><th>Player</th><th class="n">Right</th><th class="n">Pts</th></tr></thead><tbody>${P.map(p =>
+    `<tr class="${p.id === S.me.id ? 'me' : ''} ${p.rank === 1 && p.points > 0 ? 'medal1' : ''}"><td class="rk">${L.reveal && p.rank === 1 && p.points > 0 ? '🏆' : p.rank}</td><td><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}${p.picked ? '' : '<div class="small muted">No picks</div>'}</td><td class="n">${p.correct}–${p.wrong}</td><td class="n pts">${p.points}</td></tr>`).join('')}</tbody></table></div></section>`;
   // lone wolves: the only player to get a game right
   const lone = [];
   d.games.forEach(g => { if (!g.completed) return; const right = P.filter(p => p.picks[g.id] === g.winner); if (right.length === 1 && P.length > 2) lone[g.winner === 'TIE' ? 'unshift' : 'push'](`<b>${esc(right[0].display)}</b> was the only one to get ${g.winner === 'TIE' ? `the ${esc(g.away.abbr)}–${esc(g.home.abbr)} tie` : esc(g.winner === g.home.id ? g.home.abbr : g.away.abbr) + ' over ' + esc(g.winner === g.home.id ? g.away.abbr : g.home.abbr)}`); });
-  const nobody = d.games.filter(g => g.completed && P.length > 1 && !P.some(p => p.picks[g.id] === g.winner));
+  const nobody = d.games.filter(g => g.completed && P.filter(p => p.picks[g.id]).length > 1 && !P.some(p => p.picks[g.id] === g.winner));
   lone.splice(Math.max(0, 4 - Math.min(nobody.length, 2)));
   nobody.splice(2);
-  if (lone.length || nobody.length) html += `<section class="sec"><h2>Week highlights</h2><div class="card small" style="padding:6px 16px">${lone.map(t => `<div class="kv"><span>🐺 ${t}</span></div>`).join('')}${nobody.map(g => `<div class="kv"><span>😬 Nobody saw ${g.winner === 'TIE' ? `the ${esc(g.away.abbr)}–${esc(g.home.abbr)} tie` : `${esc(g.winner === g.home.id ? g.home.abbr : g.away.abbr)} beating ${esc(g.winner === g.home.id ? g.away.abbr : g.home.abbr)}`} coming</span></div>`).join('')}</div></section>`;
+  if (lone.length || nobody.length) html += `<section class="sec"><h2>${L.reveal ? 'Week highlights' : 'Highlights so far'}</h2><div class="card small" style="padding:6px 16px">${lone.map(t => `<div class="kv"><span>🐺 ${t}</span></div>`).join('')}${nobody.map(g => `<div class="kv"><span>😬 Nobody saw ${g.winner === 'TIE' ? `the ${esc(g.away.abbr)}–${esc(g.home.abbr)} tie` : `${esc(g.winner === g.home.id ? g.home.abbr : g.away.abbr)} beating ${esc(g.winner === g.home.id ? g.away.abbr : g.home.abbr)}`} coming</span></div>`).join('')}</div></section>`;
   const cell = (p, g) => {
     const v = p.picks[g.id];
     if (!v) return `<td class="c none">—</td>`;
@@ -650,10 +655,18 @@ async function renderResults(main, lg, key) {
     return `<td class="c ${cls}" title="${cls === 'no' ? 'Wrong' : 'Right'}">${esc(ab)}${cls === 'no' ? '' : ' ✓'}</td>`;
   };
   html += `<section class="sec"><h2>Everyone's picks</h2><div class="sheet"><table><thead><tr><th class="g">Game</th>${P.map(p => `<th>${esc(p.display.split(' ')[0])}</th>`).join('')}</tr></thead><tbody>
-    ${d.games.map(g => `<tr><td class="g">${esc(g.away.abbr)} ${g.away.score ?? ''} @ ${esc(g.home.abbr)} ${g.home.score ?? ''}<small>${g.completed ? (g.winner === 'TIE' ? 'Tie' : (g.winner === g.home.id ? g.home.abbr : g.away.abbr) + ' won') : esc(g.detail || '')}</small></td>${P.map(p => cell(p, g)).join('')}</tr>`).join('')}
+    ${d.games.map(g => `<tr><td class="g">${esc(g.away.abbr)} ${g.state !== 'pre' ? g.away.score ?? '' : ''} @ ${esc(g.home.abbr)} ${g.state !== 'pre' ? g.home.score ?? '' : ''}<small>${g.completed ? (g.winner === 'TIE' ? 'Tie' : (g.winner === g.home.id ? g.home.abbr : g.away.abbr) + ' won') : g.state === 'in' ? `<span style="color:#ff8a8a">● ${esc(g.detail || 'Live')}</span>` : g.state === 'pre' ? fmtWhen(g.kickoff) : esc(g.detail || '')}</small></td>${g.state === 'post' ? P.map(p => cell(p, g)).join('') : `<td colspan="${P.length}" class="c none" style="font-family:var(--sans);font-weight:500;font-size:12.5px;text-align:left">🔒 Hidden until final</td>`}</tr>`).join('')}
     <tr class="tot"><td class="g">Points</td>${P.map(p => `<td>${p.points}</td>`).join('')}</tr></tbody></table></div>
     <p class="small muted">✓ = right pick. Swipe sideways if your league has lots of players.</p></section>`;
   main.innerHTML = html;
+}
+// Keep Results fresh while games are being played.
+function resultsPoll(lg, w, games) {
+  if (w.final) return;
+  const soon = games.some(g => g.state === 'in' || (g.state === 'pre' && g.kickoff - Date.now() < 30 * 60000) || (g.state === 'post' && !g.completed));
+  const today = games.some(g => g.state === 'pre' && g.kickoff - Date.now() < 12 * 3600000);
+  if (!soon && !today) return;
+  S.poll = setInterval(() => { if (!document.hidden && route().tab === 'results') render(); }, soon ? 60000 : 5 * 60000);
 }
 
 // ---------- standings ----------
@@ -665,7 +678,7 @@ async function renderStandings(main, lg) {
   if (st.champion) html += `<div class="champ"><div class="big">🏆</div><h1>${st.champion.map(esc).join(' & ')}</h1><p class="muted" style="margin:4px 0 0">${d.league.season} ${esc(d.league.name)} champion${st.champion.length > 1 ? 's' : ''}</p></div>`;
   const hasCarry = P.some(p => p.carry > 0), before = beforeLabel(d.league.start);
   if (!st.weeks.length && !hasCarry) {
-    main.innerHTML = html + `<div class="card empty"><div class="big">📊</div><b>No weeks are final yet.</b><p class="muted small">Standings fill in once ${esc(d.league.start?.label || 'the first week')} is over. Picks stay secret until then.</p>${d.league.isOwner && d.league.start?.idx > 1 ? `<p class="small"><a href="#/l/${lg.id}/league">Already been playing? Add everyone's points from ${esc(before)} →</a></p>` : ''}</div>`;
+    main.innerHTML = html + `<div class="card empty"><div class="big">📊</div><b>No weeks are final yet.</b><p class="muted small">Standings start filling in as soon as the first game of ${esc(d.league.start?.label || 'the first week')} ends.</p>${d.league.isOwner && d.league.start?.idx > 1 ? `<p class="small"><a href="#/l/${lg.id}/league">Already been playing? Add everyone's points from ${esc(before)} →</a></p>` : ''}</div>`;
     return;
   }
   const me = P.find(p => p.id === S.me.id);
@@ -674,12 +687,12 @@ async function renderStandings(main, lg) {
       <div class="tile"><div class="k">Your rank</div><div class="v">${me.rank}<span class="muted" style="font-size:17px"> of ${P.length}</span></div></div>
       <div class="tile"><div class="k">Points</div><div class="v">${me.points}</div><div class="s">${P[0].id === me.id ? (P[1] ? `+${me.points - P[1].points} ahead` : 'Leading') : `${P[0].points - me.points} behind 1st`}</div></div>
       <div class="tile"><div class="k">Pick accuracy</div><div class="v">${pct(me.pct)}</div><div class="s">${me.correct}–${me.wrong}</div></div>
-      <div class="tile"><div class="k">Weeks won</div><div class="v">${me.weeksWon}</div><div class="s">of ${st.weeks.length} tracked</div></div></div>`;
+      <div class="tile"><div class="k">Weeks won</div><div class="v">${me.weeksWon}</div><div class="s">of ${st.finalCount ?? st.weeks.length} finished</div></div></div>`;
   }
   html += `<section class="sec"><h2>Leaderboard</h2><div class="card" style="padding:4px 8px"><table class="tbl" id="lb"><thead><tr><th></th><th>Player</th><th class="n">W–L</th><th class="n">%</th><th class="n">Pts</th></tr></thead><tbody>${P.map(p =>
     `<tr class="click ${p.id === S.me.id ? 'me' : ''} ${p.rank === 1 ? 'medal1' : ''}" data-id="${p.id}"><td class="rk">${p.rank}</td><td><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</td><td class="n">${p.correct + p.wrong ? `${p.correct}–${p.wrong}` : '—'}</td><td class="n">${pct(p.pct)}</td><td class="n pts">${p.points}</td></tr>`).join('')}</tbody></table></div>
     <p class="small muted">${hasCarry ? `Points include ${esc(before)}, entered by the commissioner. W–L and % count only weeks picked in the app. ` : ''}Tap a player for their full stats. Ties in points are broken by pick accuracy.</p></section>`;
-  if (!st.weeks.length) { main.innerHTML = html + `<p class="small muted" style="text-align:center">Weekly stats and the season chart start once ${esc(d.league.start?.label || 'the first week')} is final.</p>`; bindLeaderboard(main, st, P, before); return; }
+  if (!st.weeks.length) { main.innerHTML = html + `<p class="small muted" style="text-align:center">Weekly stats and the season chart start as soon as the first game of ${esc(d.league.start?.label || 'the first week')} ends.</p>`; bindLeaderboard(main, st, P, before); return; }
   html += `<section class="sec"><h2>Points over the season</h2><div class="card"><div id="chart"></div></div></section>`;
   // league leaders
   const best = (f, fmt, minOk = () => true) => { const c = P.filter(minOk); if (!c.length) return null; const top = Math.max(...c.map(f)); const who = c.filter(p => f(p) === top); return { v: fmt(top), who: who.map(p => p.display).join(', ') }; };
@@ -692,8 +705,10 @@ async function renderStandings(main, lg) {
   ].filter(x => x[1]);
   html += `<section class="sec"><h2>League leaders</h2><div class="tiles">${L.map(([k, b]) => `<div class="tile"><div class="k">${k}</div><div class="v">${b.v}</div><div class="s">${esc(b.who)}</div></div>`).join('')}</div></section>`;
   html += `<section class="sec"><h2>Weekly winners</h2><div class="card" style="padding:4px 16px">${st.weekWinners.slice().reverse().map(x => `<a class="kv" style="text-decoration:none;color:var(--text)" href="#/l/${lg.id}/results/${x.key}"><span>${esc(x.label)}</span><span>${x.names.length ? `<b>${x.names.map(esc).join(', ')}</b> <span class="muted">· ${x.points} pts</span>` : '<span class="muted">—</span>'}</span></a>`).join('')}</div></section>`;
+  if (st.weeks.some(w => w.live)) html = html.replace('<section class="sec"><h2>Leaderboard</h2>', `<p class="small" style="margin:4px 2px 0;color:var(--turf)">● Live: includes finished games from ${esc(st.weeks.find(w => w.live).label)}. Updates as games end.</p><section class="sec"><h2>Leaderboard</h2>`);
   main.innerHTML = html;
   drawChart($('#chart'), st, P, hasCarry ? before : null);
+  if (st.weeks.some(w => w.live)) S.poll = setInterval(() => { if (!document.hidden && route().tab === 'standings' && !main.querySelector('tr.detail')) render(); }, 2 * 60000);
   bindLeaderboard(main, st, P, before);
 }
 function beforeLabel(start) {
@@ -714,7 +729,7 @@ function bindLeaderboard(main, st, P, before) {
     tr.insertAdjacentHTML('afterend', `<tr class="detail"><td colspan="5"><div class="tiles">
       ${t('Points', p.points, p.carry ? `${p.carry} from ${esc(before)} + ${p.earned} since` : `${p.avg.toFixed(1)} per week`)}
       ${t('Correct', pct(p.pct), `${p.correct} right, ${p.wrong} wrong`)}
-      ${t('Weeks won', p.weeksWon, `of ${st.weeks.length}`)}
+      ${t('Weeks won', p.weeksWon, `of ${st.finalCount ?? st.weeks.length}`)}
       ${t('Best week', p.best ? p.best.points : '—', p.best ? esc(p.best.label) : '')}
       ${t('Longest streak', p.longest, `current: ${p.streak}`)}
       ${t('Ties called', p.tiesHit, `${p.tiePicks} tie pick${p.tiePicks === 1 ? '' : 's'}`)}
@@ -785,7 +800,7 @@ async function renderLeague(main, lg) {
       <li>Pick the winner of every game each week, or pick a <b>tie</b>.</li>
       <li>Right winner: <b>1 point</b>. Wrong: <b>0</b>. Picked a tie and it ties: <b style="color:var(--gold)">10 points</b>.</li>
       <li>You can pick each game until <b>24 hours before it kicks off</b>. After that it's locked. No pick = 0.</li>
-      <li>Nobody can see anyone else's picks until <b>every game that week is final</b>.</li>
+      <li>Nobody can see anyone else's pick for a game until <b>that game is over</b>. Then it shows up on Results and the points count right away.</li>
       <li>Weekly winner has the most points that week. The season champion has the most points after the Super Bowl.</li>
       <li>Your picks count in every league you're in.</li></ul></div></section>
     ${L.isOwner ? `<section class="sec"><h2>Points from earlier</h2><form class="card stack" id="cy">

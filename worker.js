@@ -4,7 +4,8 @@
 //
 // Rules: pick the winner of every game (or a tie). Right winner = 1 point, wrong = 0,
 // picked a tie and the game ties = 10 points. Each game's pick locks 24 hours before that
-// game kicks off, and picks stay hidden from other players until every game that week is final.
+// game kicks off. Other players' picks stay hidden until that game is final, then they're revealed
+// and the points count toward the standings right away.
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 const ESPN_STATS = 'https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/statistics/byteam';
@@ -378,24 +379,29 @@ async function computeStandings(env, league, members, cur) {
   for (const w of inRange) {
     try { const r = await ensureWeek(env, w.key); if (r) rows[w.key] = r; } catch { /* ESPN hiccup: skip */ }
   }
-  const finals = inRange.filter(w => isFinal(rows[w.key]));
-  const out = { weeks: finals.map(w => ({ key: w.key, label: w.label, short: w.short })), players: [], weekWinners: [], champion: null, seasonOver: false };
+  // Every week with games counts as soon as any of its games is final. Only finished games are scored.
+  const withGames = inRange.filter(w => rows[w.key]?.game_count);
+  const out = { weeks: [], players: [], weekWinners: [], champion: null, seasonOver: false, finalCount: 0 };
   if (!members.length) return out;
 
   let games = [], picks = [];
-  if (finals.length) {
-    const keys = finals.map(w => w.key), qs = keys.map(() => '?').join(',');
+  if (withGames.length) {
+    const keys = withGames.map(w => w.key), qs = keys.map(() => '?').join(',');
     games = (await env.DB.prepare(`SELECT * FROM games WHERE week_key IN (${qs}) ORDER BY kickoff`).bind(...keys).all()).results;
     picks = (await env.DB.prepare(`SELECT p.user_id, p.game_id, p.pick FROM picks p JOIN members m ON m.user_id=p.user_id AND m.league_id=? WHERE p.week_key IN (${qs})`).bind(league.id, ...keys).all()).results;
   }
   const pk = {}; picks.forEach(p => { (pk[p.user_id] ||= {})[p.game_id] = p.pick; });
   const byWeek = {}; games.forEach(g => (byWeek[g.week_key] ||= []).push(g));
+  const active = withGames.filter(w => (byWeek[w.key] || []).some(g => g.completed));
+  out.weeks = active.map(w => ({ key: w.key, label: w.label, short: w.short, live: !isFinal(rows[w.key]) }));
+  out.finalCount = active.filter(w => isFinal(rows[w.key])).length;
 
   // carry = points from earlier in the season, entered by the commissioner (weeks before the league started here)
   const P = members.map(m => ({ id: m.id, display: m.display, carry: m.carry || 0, points: m.carry || 0, earned: 0, correct: 0, wrong: 0, missed: 0, tiesHit: 0, tiePicks: 0,
     weekly: [], weeksWon: 0, best: null, streak: 0, longest: 0, homePicks: 0, totalPicks: 0, favPicks: {} }));
-  for (const w of finals) {
+  for (const w of active) {
     const gs = byWeek[w.key] || [];
+    const weekDone = isFinal(rows[w.key]);
     const wk = P.map(p => {
       let pts = 0;
       for (const g of gs) {
@@ -412,9 +418,10 @@ async function computeStandings(env, league, members, cur) {
         else { p.wrong++; p.streak = 0; }
       }
       p.points += pts; p.earned += pts; p.weekly.push(pts);
-      if (!p.best || pts > p.best.points) p.best = { points: pts, label: w.label };
+      if (weekDone && (!p.best || pts > p.best.points)) p.best = { points: pts, label: w.label };
       return pts;
     });
+    if (!weekDone) continue;              // weekly winners are decided once every game that week is over
     const top = Math.max(...wk);
     const winners = P.filter((p, i) => wk[i] === top && top > 0);
     winners.forEach(p => p.weeksWon++);
@@ -423,7 +430,7 @@ async function computeStandings(env, league, members, cur) {
   P.forEach(p => {
     const decided = p.correct + p.wrong;
     p.pct = decided ? p.correct / decided : null;
-    p.avg = finals.length ? p.earned / finals.length : 0;
+    p.avg = active.length ? p.earned / active.length : 0;
     p.homePct = p.totalPicks ? p.homePicks / p.totalPicks : null;
     const fav = Object.entries(p.favPicks).sort((a, b) => b[1] - a[1])[0];
     p.favTeam = fav ? { abbr: fav[0], count: fav[1] } : null;
@@ -645,25 +652,28 @@ async function api(req, env, url) {
         const all = (await env.DB.prepare(`SELECT p.user_id, p.game_id, p.pick FROM picks p JOIN members m ON m.user_id=p.user_id AND m.league_id=? WHERE p.week_key=?`).bind(league.id, key).all()).results;
         const by = {}; all.forEach(p => (by[p.user_id] ||= {})[p.game_id] = p.pick);
         const counted = meta.idx >= league.start_idx && meta.season === league.season;
-        out.league = { id: league.id, name: league.name, counted, reveal: final };
+        // A game's picks are revealed once that game is over ('post' also covers postponed/cancelled games).
+        const done = new Set(games.filter(g => g.state === 'post').map(g => g.id));
+        const anyDone = done.size > 0;
+        out.league = { id: league.id, name: league.name, counted, reveal: final, anyDone, doneCount: done.size };
         out.league.players = members.map(x => {
           const p = by[x.id] || {};
           const o = { id: x.id, display: x.display, picked: Object.keys(p).length };
-          if (final) {
-            o.picks = p;
+          if (anyDone) {
+            o.picks = Object.fromEntries(Object.entries(p).filter(([gid]) => done.has(gid)));
             let pts = 0, cor = 0, wr = 0;
             games.forEach(g => { const s = scorePick(p[g.id], g); if (s === null) return; if (s > 0) { cor++; pts += s; } else wr++; });
             o.points = pts; o.correct = cor; o.wrong = wr;
           }
           return o;
         });
-        if (final) {
+        if (anyDone) {
           const P = out.league.players;
           P.sort((a, b) => b.points - a.points || b.correct - a.correct || a.display.localeCompare(b.display));
           P.forEach((p, j) => { p.rank = j && P[j - 1].points === p.points ? P[j - 1].rank : j + 1; });
           // per-game breakdown: how the league split, and lone-wolf correct picks
           out.league.split = {};
-          games.forEach(g => {
+          games.filter(g => done.has(g.id)).forEach(g => {
             const s = { home: 0, away: 0, tie: 0, none: 0 };
             P.forEach(p => { const v = p.picks[g.id]; if (!v) s.none++; else if (v === 'TIE') s.tie++; else if (v === g.home_id) s.home++; else s.away++; });
             out.league.split[g.id] = s;
