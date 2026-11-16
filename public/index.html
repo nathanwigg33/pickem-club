@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Pick'em Club: NFL picks with your friends</title>
+<title>Pickoff: NFL picks with your friends</title>
 <meta name="description" content="Make a league, pick the winner of every NFL game each week, and see who's best by the end of the season.">
-<meta property="og:title" content="Pick'em Club">
+<meta property="og:title" content="Pickoff">
 <meta property="og:description" content="Pick every NFL game with your friends. 1 point for a winner, 10 for calling a tie.">
 <meta property="og:image" content="/og.png">
 <meta property="og:type" content="website">
@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Pick'em Club">
+<meta name="apple-mobile-web-app-title" content="Pickoff">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -359,7 +359,7 @@ async function render() {
 function shell(lg, tab) {
   const t = (k, label) => `<a href="#/l/${lg.id}/${k}" class="${tab === k ? 'on' : ''}">${ICON[k]}${label}</a>`;
   return `<header class="top"><div class="wrap">
-      <a class="brand" href="#/l/${lg.id}/picks"><img src="/icon-192.png" alt="">Pick'em<span>Club</span></a>
+      <a class="brand" href="#/l/${lg.id}/picks"><img src="/icon-192.png" alt="">Pick<span>off</span></a>
       <button class="lgsel" onclick="S._stayHome=true;go('#/home')" aria-label="Switch league"><b>${esc(lg.name)}</b>${ICON.down}</button>
     </div></header>
     <nav class="tabs"><div class="wrap">${t('picks', 'Picks')}${t('results', 'Results')}${t('standings', 'Standings')}${t('league', 'League')}</div></nav>`;
@@ -374,7 +374,7 @@ async function renderAuth(app, mode = 'login') {
     catch { sessionStorage.removeItem('join'); }
   }
   app.innerHTML = `<main class="wrap" style="max-width:440px">
-    <div class="hero"><img src="/icon-512.png" alt=""><h1>Pick'em <span>Club</span></h1><p>Pick every NFL game with your friends. Everyone's picks stay secret until each game is over.</p></div>
+    <div class="hero"><img src="/icon-512.png" alt=""><h1>Pick<span>off</span></h1><p>Pick every NFL game with your friends. Everyone's picks stay secret until each game is over.</p></div>
     <div class="rules"><div><b>1</b><span>point for picking the winner</span></div><div><b>0</b><span>for a wrong pick</span></div><div><b style="color:var(--gold)">10</b><span>if you call a tie</span></div></div>
     <div class="card sec">${inviteHtml}
       <div class="seg"><button class="${mode === 'login' ? 'on' : ''}" data-m="login">Sign in</button><button class="${mode === 'signup' ? 'on' : ''}" data-m="signup">Create account</button></div>
@@ -411,7 +411,7 @@ async function renderHome(app) {
     } catch { sessionStorage.removeItem('join'); }
   }
   const opts = S.startOptions.map((w, i) => `<option value="${w.key}">${esc(w.label)}${i === 0 ? ' (next up)' : ''}</option>`).join('');
-  app.innerHTML = `<header class="top"><div class="wrap"><a class="brand" href="#/home"><img src="/icon-192.png" alt="">Pick'em<span>Club</span></a>
+  app.innerHTML = `<header class="top"><div class="wrap"><a class="brand" href="#/home"><img src="/icon-192.png" alt="">Pick<span>off</span></a>
       <a class="lgsel" href="#/account" style="text-decoration:none;color:var(--text)"><b>${esc(S.me.display)}</b></a></div></header>
     <main class="wrap">
       <div class="sec">${joinCard}</div>
@@ -814,8 +814,8 @@ async function renderLeague(main, lg) {
       <a class="kv" href="#/account" style="color:var(--text);text-decoration:none"><span>Account &amp; sign out</span>${ICON.right}</a>
       <a class="kv" href="#/home" onclick="S._stayHome=true" style="color:var(--text);text-decoration:none"><span>All leagues · start or join another</span>${ICON.right}</a></div></section>`;
   $('#share').onclick = async () => {
-    const text = `Join my NFL pick'em league "${L.name}" on Pick'em Club! Code: ${L.code}`;
-    if (navigator.share) { try { await navigator.share({ title: "Pick'em Club", text, url: link }); } catch {} }
+    const text = `Join my NFL pick'em league "${L.name}" on Pickoff! Code: ${L.code}`;
+    if (navigator.share) { try { await navigator.share({ title: "Pickoff", text, url: link }); } catch {} }
     else { await copy(link); }
   };
   $('#copy').onclick = () => copy(link);
@@ -856,7 +856,7 @@ function manageMember(L, id, name) {
 // ---------- account ----------
 function renderAccount(app) {
   const back = +store.get('lastLeague') && S.leagues.find(l => l.id === +store.get('lastLeague'));
-  app.innerHTML = `<header class="top"><div class="wrap"><a class="brand" href="${back ? `#/l/${back.id}/picks` : '#/home'}"><img src="/icon-192.png" alt="">Pick'em<span>Club</span></a></div></header>
+  app.innerHTML = `<header class="top"><div class="wrap"><a class="brand" href="${back ? `#/l/${back.id}/picks` : '#/home'}"><img src="/icon-192.png" alt="">Pick<span>off</span></a></div></header>
   <main class="wrap" style="max-width:480px">
     <div class="wkbar"><h1>Account<span class="sub">Signed in as @${esc(S.me.username)}</span></h1></div>
     <form class="card stack" id="nf"><div><label class="f" for="dn2">Display name</label><input class="in" id="dn2" name="display" value="${esc(S.me.display)}" maxlength="24" required></div><button class="btn ghost block">Save name</button></form>

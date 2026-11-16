@@ -1,4 +1,4 @@
-# Pick'em Club
+# Pickoff
 
 An NFL pick'em app for you and your friends. Make a league, invite people with a code, and pick the winner of every game each week.
 
@@ -15,19 +15,14 @@ An NFL pick'em app for you and your friends. Make a league, invite people with a
 ## What's in here
 - `worker.js`: the Cloudflare Worker. It runs the API (accounts, leagues, picks, scoring and stats) and pulls the NFL schedule and live scores from ESPN's public scoreboard feed. A scheduled job refreshes scores every 10 minutes.
 - `public/`: the app itself (`index.html`), icons and home-screen settings.
-- `wrangler.jsonc`: Cloudflare settings, including the **D1 database** (named `pickem-club`, bound as `DB`) that stores accounts, leagues and picks.
+- `wrangler.jsonc`: Cloudflare settings, including the **D1 database** that stores accounts, leagues and picks. It's bound as `DB` and pinned by its ID; the database itself keeps its original name, `pickem-club`.
 
 The database tables create themselves the first time the app runs, so there's no setup script to run.
 
 ## Publishing (Cloudflare + GitHub)
 Same as WhereInTheWord: Cloudflare Workers is connected to this repo, so every push to `main` publishes automatically.
 
-First-time setup:
-1. In the Cloudflare dashboard, go to **Workers & Pages → Create → Import a repository** and choose `pickem-club`.
-2. Leave the build command empty and keep the deploy command `npx wrangler deploy`. Click **Deploy**.
-3. On the first deploy Cloudflare creates the `pickem-club` D1 database automatically.
-   *If the deploy log instead complains about the database*, go to **Storage & Databases → D1 → Create**, name it `pickem-club`, copy its **Database ID**, and add it to `wrangler.jsonc` as `"database_id": "<the id>"` next to `"database_name"`. Then push again.
-4. The app will be live at `https://pickem-club.<your-subdomain>.workers.dev`.
+The Worker is named **pickoff** in Cloudflare, so the app lives at **https://pickoff.nathanmwiggy.workers.dev**. The `name` in `wrangler.jsonc` must match the Worker's name in the dashboard, or builds fail.
 
 ## Points from earlier in the season
 If your group was already playing before you started using the app, the commissioner can enter each player's points so far under **League → Points from earlier**. Those points are added to the season standings, and every week picked in the app adds on top. Accuracy (W–L, %) only counts weeks picked in the app.

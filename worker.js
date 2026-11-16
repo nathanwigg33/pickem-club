@@ -1,4 +1,4 @@
-// Pick'em Club: Cloudflare Worker
+// Pickoff: Cloudflare Worker
 // Serves the app in /public and the JSON API under /api/*.
 // Data lives in the D1 database bound as DB. NFL schedule and scores come from ESPN's public scoreboard feed.
 //
@@ -86,7 +86,7 @@ async function ensureSchema(env) {
 
 // ---------- ESPN sync ----------
 async function espn(env, path) {
-  const r = await fetch((env.ESPN_BASE || ESPN) + path, { headers: { 'user-agent': 'PickemClub/1.0' }, cf: { cacheTtl: 30 } });
+  const r = await fetch((env.ESPN_BASE || ESPN) + path, { headers: { 'user-agent': 'Pickoff/1.0' }, cf: { cacheTtl: 30 } });
   if (!r.ok) throw new Error('ESPN ' + r.status);
   return r.json();
 }
@@ -298,7 +298,7 @@ async function fetchStatsFeed(env, season) {
 
 // Backup: points scored and allowed per game from the standings, if the full stats feed can't be reached.
 async function statsFromStandings(env, season) {
-  const r = await fetch(env.ESPN_STANDINGS || `https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season=${season}`, { headers: { 'user-agent': 'PickemClub/1.0' } });
+  const r = await fetch(env.ESPN_STANDINGS || `https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season=${season}`, { headers: { 'user-agent': 'Pickoff/1.0' } });
   if (!r.ok) throw new Error('standings ' + r.status);
   const d = await r.json();
   const entries = [];
