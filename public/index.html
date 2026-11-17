@@ -279,9 +279,9 @@ async function api(path, data) {
   if (!r.ok) { const e = new Error(j.error || 'Something went wrong (' + r.status + ')'); e.status = r.status; throw e; }
   return j;
 }
-const fmtDay = ms => new Date(ms).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-const fmtTime = ms => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-const fmtWhen = ms => new Date(ms).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const fmtDay = ms => !ms ? 'Time to be announced' : new Date(ms).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+const fmtTime = ms => !ms ? 'TBA' : new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+const fmtWhen = ms => !ms ? 'TBA' : new Date(ms).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 function countdown(ms) {
   let s = Math.max(0, Math.floor(ms / 1000));
   const d = Math.floor(s / 86400); s -= d * 86400; const h = Math.floor(s / 3600); s -= h * 3600; const m = Math.floor(s / 60); s -= m * 60;
@@ -543,7 +543,7 @@ async function loadStats(force) {
   try { S.stats = await api('stats'); S.statsAt = Date.now(); S.statsErr = null; }
   catch (e) { S.statsErr = e.message; }
 }
-const isGameLocked = g => !!g.locked || Date.now() >= g.locksAt;
+const isGameLocked = g => !!g.locked || (!!g.locksAt && Date.now() >= g.locksAt);
 function groupByDay(games) {
   const out = []; let cur = null;
   games.forEach(g => { const d = fmtDay(g.kickoff); if (!cur || cur.d !== d) out.push(cur = { d, games: [] }); cur.games.push(g); });
@@ -557,11 +557,11 @@ async function renderPicks(main, lg, key) {
     const picked = d.games.filter(g => d.myPicks[g.id]).length, total = d.games.length;
     const open = d.games.filter(g => !isGameLocked(g));
     const lockedNow = total > 0 && !open.length;
-    const nextLock = open.length ? Math.min(...open.map(g => g.locksAt)) : null;
+    const locks = open.map(g => g.locksAt).filter(Boolean), nextLock = locks.length ? Math.min(...locks) : null;
     const openUnpicked = open.filter(g => !d.myPicks[g.id]).length;
     let banner;
     if (!total) banner = `<div class="banner"><div class="ic">${ICON.clock}</div><div><b>No games yet</b><div class="t">The schedule for this week isn't out yet. Check back later.</div></div></div>`;
-    else if (!lockedNow) banner = `<div class="banner open"><div class="ic">${ICON.clock}</div><div style="flex:1;min-width:0"><b>${picked} of ${total} picked</b><div class="t">${openUnpicked ? `${openUnpicked} still open to pick. ` : ''}Next game closes ${fmtWhen(nextLock)}</div><div class="progress"><i style="width:${total ? picked / total * 100 : 0}%"></i></div></div><div class="cd" id="cd">${countdown(nextLock - Date.now())}</div></div>`;
+    else if (!lockedNow) banner = `<div class="banner open"><div class="ic">${ICON.clock}</div><div style="flex:1;min-width:0"><b>${picked} of ${total} picked</b><div class="t">${openUnpicked ? `${openUnpicked} still open to pick. ` : ''}${nextLock ? `Next game closes ${fmtWhen(nextLock)}` : 'Kickoff times not set yet'}</div><div class="progress"><i style="width:${total ? picked / total * 100 : 0}%"></i></div></div>${nextLock ? `<div class="cd" id="cd">${countdown(nextLock - Date.now())}</div>` : ''}</div>`;
     else if (!w.final) banner = `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>Picks are locked · you picked ${picked} of ${total}</b><div class="t">Everyone's picks for a game show up on Results as soon as it ends. Your points so far: <b style="display:inline;color:var(--text)">${d.myPoints}</b></div></div></div>`;
     else banner = `<div class="banner done"><div class="ic">${ICON.check}</div><div style="flex:1"><b>Week final · you scored ${d.myPoints} point${d.myPoints === 1 ? '' : 's'}</b><div class="t">See how everyone did on the Results tab.</div></div><a class="btn sm" href="#/l/${lg.id}/results/${w.key}">Results</a></div>`;
     const counted = d.league && !d.league.counted ? `<p class="small muted" style="margin:-4px 2px 12px">This week is before ${esc(lg.name)} started, so it doesn't count toward the standings.</p>` : '';
@@ -593,7 +593,8 @@ async function renderPicks(main, lg, key) {
       const cd = $('#cd'); if (!cd) return;
       const open = d.games.filter(g => !isGameLocked(g));
       if (!open.length) { clearInterval(S.tick); return draw(); }
-      const nl = Math.min(...open.map(g => g.locksAt)), left = nl - Date.now();
+      const ls = open.map(g => g.locksAt).filter(Boolean); if (!ls.length) return;
+      const nl = Math.min(...ls), left = nl - Date.now();
       if (left <= 1000) setTimeout(draw, 1200); else cd.textContent = countdown(left);
     }, 1000);
   }

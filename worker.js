@@ -124,6 +124,13 @@ async function getCurrent(env, force = false) {
   }
 }
 
+// A kickoff only counts if it falls inside the season (Aug 1 to Mar 1). ESPN occasionally sends
+// placeholder dates (we've seen 1/31/1993); those are ignored so they can't lock picks.
+function validKick(ms, season) {
+  if (!ms || isNaN(ms)) return false;
+  const y = season || new Date(ms).getUTCFullYear();
+  return ms >= Date.UTC(y, 7, 1) && ms < Date.UTC(y + 1, 2, 1);
+}
 function parseEvent(ev, weekKey) {
   const c = ev.competitions?.[0] || {};
   const st = ev.status?.type || c.status?.type || {};
@@ -164,7 +171,8 @@ function parseEvent(ev, weekKey) {
   let winner = null;
   if (completed && home.score !== null && away.score !== null) winner = home.score > away.score ? home.id : away.score > home.score ? away.id : 'TIE';
   return {
-    id: String(ev.id), week_key: weekKey, kickoff: Date.parse(ev.date || c.date), state: st.state || 'pre', completed,
+    id: String(ev.id), week_key: weekKey, kickoff: (() => { const k = Date.parse(ev.date || c.date || c.startDate); return validKick(k, +String(weekKey).slice(0, 4)) ? k : null; })(),
+    state: st.state || 'pre', completed,
     detail: st.shortDetail || st.detail || '', winner, home, away,
     oddsProvider: home.ml || away.ml || home.spread ? (o.provider?.displayName || o.provider?.name || '') : null, overUnder,
   };
@@ -185,14 +193,16 @@ async function ensureWeek(env, key, { force = false } = {}) {
   if (!force && row && t - row.fetched < maxAge) return row;
   try {
     const d = await espn(env, `/scoreboard?dates=${meta.season}&seasontype=${meta.stype}&week=${meta.week}&limit=100`);
-    const games = (d.events || []).map(ev => parseEvent(ev, key)).filter(g => g.id && !isNaN(g.kickoff));
+    const games = (d.events || []).map(ev => parseEvent(ev, key)).filter(g => g.id);
     const stmts = games.map(g => env.DB.prepare(
       `INSERT INTO games (id, week_key, kickoff, state, completed, detail, winner,
          home_id, home_abbr, home_name, home_logo, home_color, home_score, home_record,
          away_id, away_abbr, away_name, away_logo, away_color, away_score, away_record, updated, home_ml, away_ml, odds_provider, home_spread, away_spread, over_under)
        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?, ?,?,?, ?,?,?)
-       ON CONFLICT(id) DO UPDATE SET week_key=excluded.week_key, kickoff=excluded.kickoff, state=excluded.state, completed=excluded.completed,
-         detail=excluded.detail, winner=excluded.winner, home_id=excluded.home_id, home_abbr=excluded.home_abbr, home_name=excluded.home_name,
+       ON CONFLICT(id) DO UPDATE SET week_key=excluded.week_key,
+         kickoff=CASE WHEN excluded.kickoff IS NOT NULL THEN excluded.kickoff WHEN games.kickoff >= 946684800000 THEN games.kickoff ELSE NULL END,
+         state=excluded.state, completed=excluded.completed,
+         detail=CASE WHEN excluded.kickoff IS NULL AND excluded.state='pre' THEN games.detail ELSE excluded.detail END, winner=excluded.winner, home_id=excluded.home_id, home_abbr=excluded.home_abbr, home_name=excluded.home_name,
          home_logo=excluded.home_logo, home_color=excluded.home_color, home_score=excluded.home_score, home_record=excluded.home_record,
          away_id=excluded.away_id, away_abbr=excluded.away_abbr, away_name=excluded.away_name, away_logo=excluded.away_logo,
          away_color=excluded.away_color, away_score=excluded.away_score, away_record=excluded.away_record, updated=excluded.updated,
@@ -204,7 +214,9 @@ async function ensureWeek(env, key, { force = false } = {}) {
       g.home.id, g.home.abbr, g.home.name, g.home.logo, g.home.color, g.home.score, g.home.record,
       g.away.id, g.away.abbr, g.away.name, g.away.logo, g.away.color, g.away.score, g.away.record, t,
       g.home.ml, g.away.ml, g.oddsProvider, g.home.spread, g.away.spread, g.overUnder));
-    const kicks = games.map(g => g.kickoff);
+    // include start times we already had for games ESPN just sent without a valid one
+    const prev = Object.fromEntries((await env.DB.prepare(`SELECT id, kickoff FROM games WHERE week_key=?`).bind(key).all()).results.map(r => [r.id, r.kickoff]));
+    const kicks = games.map(g => g.kickoff ?? (validKick(prev[g.id], meta.season) ? prev[g.id] : null)).filter(k => k);
     const allFinal = games.length > 0 && games.every(g => g.state === 'post') ? 1 : 0;
     stmts.push(env.DB.prepare(
       `INSERT INTO weeks (key, season, stype, week, first_kick, last_kick, all_final, game_count, fetched) VALUES (?,?,?,?,?,?,?,?,?)
@@ -220,7 +232,7 @@ async function ensureWeek(env, key, { force = false } = {}) {
 }
 
 // A game locks 4h before its kickoff. A week is fully locked once its last game has locked.
-const gameLocked = g => !!(g && g.kickoff && now() >= g.kickoff - LOCK_BEFORE);
+const gameLocked = g => !!(g && validKick(g.kickoff) && now() >= g.kickoff - LOCK_BEFORE);
 // ---------- team stats ----------
 // One request returns every team's season stats (theirs and their opponents'). We work out the league ranks ourselves.
 const STAT_DEFS = [
@@ -332,12 +344,12 @@ async function statsFromStandings(env, season) {
   return { season, fetched: now(), count: entries.length, partial: true, labels: defs.map(([key, label, higher, dp]) => ({ key, label, higher, dp })), teams };
 }
 
-const isLocked = w => !!(w && w.last_kick && now() >= w.last_kick - LOCK_BEFORE);
+const isLocked = w => !!(w && validKick(w.last_kick) && now() >= w.last_kick - LOCK_BEFORE);
 const isFinal = w => !!(w && w.all_final);
 
 function gameOut(g) {
   return {
-    id: g.id, kickoff: g.kickoff, locksAt: g.kickoff - LOCK_BEFORE, locked: gameLocked(g), state: g.state, completed: !!g.completed, detail: g.detail, winner: g.winner,
+    id: g.id, kickoff: validKick(g.kickoff) ? g.kickoff : null, locksAt: validKick(g.kickoff) ? g.kickoff - LOCK_BEFORE : null, locked: gameLocked(g), state: g.state, completed: !!g.completed, detail: g.detail, winner: g.winner,
     oddsProvider: g.odds_provider || null, overUnder: g.over_under || null,
     home: { id: g.home_id, abbr: g.home_abbr, name: g.home_name, logo: g.home_logo, color: g.home_color, score: g.home_score, record: g.home_record, ml: g.home_ml || null, spread: g.home_spread || null },
     away: { id: g.away_id, abbr: g.away_abbr, name: g.away_name, logo: g.away_logo, color: g.away_color, score: g.away_score, record: g.away_record, ml: g.away_ml || null, spread: g.away_spread || null },
