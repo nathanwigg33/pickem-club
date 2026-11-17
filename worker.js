@@ -78,6 +78,7 @@ async function ensureSchema(env) {
   await env.DB.batch(SCHEMA.map(s => env.DB.prepare(s)));
   // columns added after the first release
   try { await env.DB.prepare(`ALTER TABLE members ADD COLUMN carry INTEGER DEFAULT 0`).run(); } catch { /* already there */ }
+  try { await env.DB.prepare(`ALTER TABLE members ADD COLUMN carry_through INTEGER`).run(); } catch { /* already there */ }
   for (const col of ['home_ml TEXT', 'away_ml TEXT', 'odds_provider TEXT', 'home_spread TEXT', 'away_spread TEXT', 'over_under TEXT']) {
     try { await env.DB.prepare(`ALTER TABLE games ADD COLUMN ${col}`).run(); } catch { /* already there */ }
   }
@@ -361,7 +362,7 @@ async function membership(env, leagueId, userId) {
   return env.DB.prepare(`SELECT l.* FROM leagues l JOIN members m ON m.league_id=l.id WHERE l.id=? AND m.user_id=?`).bind(leagueId, userId).first();
 }
 async function leagueMembers(env, leagueId) {
-  const r = await env.DB.prepare(`SELECT u.id, u.display, u.username, m.joined, COALESCE(m.carry, 0) AS carry FROM members m JOIN users u ON u.id=m.user_id WHERE m.league_id=? ORDER BY m.joined`).bind(leagueId).all();
+  const r = await env.DB.prepare(`SELECT u.id, u.display, u.username, m.joined, COALESCE(m.carry, 0) AS carry, m.carry_through FROM members m JOIN users u ON u.id=m.user_id WHERE m.league_id=? ORDER BY m.joined`).bind(leagueId).all();
   return r.results;
 }
 function firstOpenIdx(weeks, weekRows, curKey) {
@@ -371,6 +372,10 @@ function firstOpenIdx(weeks, weekRows, curKey) {
   return cur.idx;
 }
 
+function effectiveThrough(league, m) {
+  const def = league.start_idx - 1;
+  return m.carry_through === null || m.carry_through === undefined ? def : Math.max(def, m.carry_through);
+}
 async function computeStandings(env, league, members, cur) {
   const weeks = seasonWeeks(league.season);
   const curIdx = (weeks.find(w => w.key === cur.key) || { idx: cur.season > league.season ? 99 : 0 }).idx;
@@ -396,14 +401,17 @@ async function computeStandings(env, league, members, cur) {
   out.weeks = active.map(w => ({ key: w.key, label: w.label, short: w.short, live: !isFinal(rows[w.key]) }));
   out.finalCount = active.filter(w => isFinal(rows[w.key])).length;
 
-  // carry = points from earlier in the season, entered by the commissioner (weeks before the league started here)
-  const P = members.map(m => ({ id: m.id, display: m.display, carry: m.carry || 0, points: m.carry || 0, earned: 0, correct: 0, wrong: 0, missed: 0, tiesHit: 0, tiePicks: 0,
+  // carry = points from earlier in the season, entered by the commissioner. They cover Weeks 1 through
+  // carryThrough (by default the week before the league starts); the app counts that player's picks after that.
+  const P = members.map(m => ({ id: m.id, display: m.display, carry: m.carry || 0, points: m.carry || 0, earned: 0,
+    carryThrough: effectiveThrough(league, m), from: effectiveThrough(league, m) + 1, correct: 0, wrong: 0, missed: 0, tiesHit: 0, tiePicks: 0,
     weekly: [], weeksWon: 0, best: null, streak: 0, longest: 0, homePicks: 0, totalPicks: 0, favPicks: {} }));
   for (const w of active) {
     const gs = byWeek[w.key] || [];
     const weekDone = isFinal(rows[w.key]);
     const wk = P.map(p => {
       let pts = 0;
+      if (w.idx < p.from) { p.weekly.push(0); return null; }   // covered by this player's earlier points
       for (const g of gs) {
         if (!g.completed) continue;               // postponed/cancelled games don't count
         const pick = pk[p.id]?.[g.id];
@@ -417,20 +425,22 @@ async function computeStandings(env, league, members, cur) {
         if (s > 0) { p.correct++; pts += s; p.streak++; p.longest = Math.max(p.longest, p.streak); if (g.winner === 'TIE') p.tiesHit++; }
         else { p.wrong++; p.streak = 0; }
       }
-      p.points += pts; p.earned += pts; p.weekly.push(pts);
+      p.points += pts; p.earned += pts; p.weekly.push(pts); p.weeksCounted = (p.weeksCounted || 0) + 1;
       if (weekDone && (!p.best || pts > p.best.points)) p.best = { points: pts, label: w.label };
       return pts;
     });
     if (!weekDone) continue;              // weekly winners are decided once every game that week is over
-    const top = Math.max(...wk);
-    const winners = P.filter((p, i) => wk[i] === top && top > 0);
+    const counted = wk.filter(x => x !== null);
+    if (!counted.length) continue;
+    const top = Math.max(...counted);
+    const winners = P.filter((p, i) => wk[i] !== null && wk[i] === top && top > 0);
     winners.forEach(p => p.weeksWon++);
     out.weekWinners.push({ key: w.key, label: w.label, points: top, names: winners.map(p => p.display) });
   }
   P.forEach(p => {
     const decided = p.correct + p.wrong;
     p.pct = decided ? p.correct / decided : null;
-    p.avg = active.length ? p.earned / active.length : 0;
+    p.avg = p.weeksCounted ? p.earned / p.weeksCounted : 0;
     p.homePct = p.totalPicks ? p.homePicks / p.totalPicks : null;
     const fav = Object.entries(p.favPicks).sort((a, b) => b[1] - a[1])[0];
     p.favTeam = fav ? { abbr: fav[0], count: fav[1] } : null;
@@ -565,12 +575,14 @@ async function api(req, env, url) {
     const weeks = seasonWeeks(league.season);
     return json({
       league: { id: league.id, name: league.name, code: league.code, season: league.season, isOwner: league.owner_id === user.id, ownerId: league.owner_id,
-        start: weeks.find(w => w.idx === league.start_idx) },
-      members: members.map(x => ({ id: x.id, display: x.display, username: x.username, carry: x.carry || 0 })),
+        start: weeks.find(w => w.idx === league.start_idx),
+        weeks: weeks.map(w => ({ key: w.key, label: w.label, idx: w.idx })),
+        currentIdx: (weeks.find(w => w.key === cur.key) || { idx: 0 }).idx },
+      members: members.map(x => ({ id: x.id, display: x.display, username: x.username, carry: x.carry || 0, carryThrough: effectiveThrough(league, x) })),
       standings, current: cur.key,
     });
   }
-  if ((m = /^\/api\/leagues\/(\d+)\/(rename|leave|remove|reset|delete|carry)$/.exec(path)) && method === 'POST') {
+  if ((m = /^\/api\/leagues\/(\d+)\/(rename|leave|remove|reset|delete|carry|start)$/.exec(path)) && method === 'POST') {
     need();
     const league = await membership(env, +m[1], user.id);
     if (!league) return bad('League not found.', 404);
@@ -588,14 +600,24 @@ async function api(req, env, url) {
       await env.DB.prepare(`UPDATE leagues SET name=? WHERE id=?`).bind(name, league.id).run();
       return json({ ok: true });
     }
+    if (action === 'start') {
+      const w = seasonWeeks(league.season).find(x => x.key === b.startKey);
+      if (!w) return bad('Pick a week from this season.');
+      await env.DB.prepare(`UPDATE leagues SET start_idx=? WHERE id=?`).bind(w.idx, league.id).run();
+      return json({ ok: true });
+    }
     if (action === 'carry') {
-      // { points: { "<userId>": 42, ... } }
+      // { points: { "<userId>": 42, ... }, through: { "<userId>": <week index the points cover through> } }
       const pts = b.points && typeof b.points === 'object' ? b.points : {};
+      const thr = b.through && typeof b.through === 'object' ? b.through : {};
       const stmts = [];
       for (const [uid, val] of Object.entries(pts)) {
         const n = Math.round(Number(val));
         if (!Number.isFinite(n) || n < 0 || n > 100000) return bad('Points must be a whole number of 0 or more.');
-        stmts.push(env.DB.prepare(`UPDATE members SET carry=? WHERE league_id=? AND user_id=?`).bind(n, league.id, +uid));
+        let t = thr[uid] === undefined || thr[uid] === null || thr[uid] === '' ? null : Math.round(Number(thr[uid]));
+        if (t !== null && (!Number.isFinite(t) || t < 0 || t > 22)) return bad('Pick a valid week.');
+        if (t !== null && t <= league.start_idx - 1) t = null;    // same as the league default
+        stmts.push(env.DB.prepare(`UPDATE members SET carry=?, carry_through=? WHERE league_id=? AND user_id=?`).bind(n, t, league.id, +uid));
       }
       if (stmts.length) await env.DB.batch(stmts);
       return json({ ok: true });

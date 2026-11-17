@@ -25,7 +25,10 @@ Same as WhereInTheWord: Cloudflare Workers is connected to this repo, so every p
 The Worker is named **pickoff** in Cloudflare, so the app lives at **https://pickoff.nathanmwiggy.workers.dev**. The `name` in `wrangler.jsonc` must match the Worker's name in the dashboard, or builds fail.
 
 ## Points from earlier in the season
-If your group was already playing before you started using the app, the commissioner can enter each player's points so far under **League → Points from earlier**. Those points are added to the season standings, and every week picked in the app adds on top. Accuracy (W–L, %) only counts weeks picked in the app.
+If your group was already playing before you started using the app, the commissioner can enter each player's points so far under **League → Points from earlier**, and choose which weeks each player's total covers (for example Weeks 1–10, or later for someone who joins late). The app counts that player's picks starting the week after. Those points are added to the season standings, and every week picked in the app adds on top. Accuracy (W–L, %) only counts weeks picked in the app.
+
+## First week that counts
+Each league has its own first counted week (**League → Commissioner → First week that counts**). Weeks before it don't count in that league's standings. Picks are shared across leagues, so changing it never affects another league.
 
 ## Forgotten passwords
 There's no email, so the league's commissioner resets passwords: **League → Manage (next to the player) → Reset password**. It shows a temporary password to send them, and they change it under **Account**.
