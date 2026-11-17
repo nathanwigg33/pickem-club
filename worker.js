@@ -103,7 +103,17 @@ async function getCurrent(env, force = false) {
     if (stype === 1 || !week) { stype = 2; week = 1; }             // preseason -> show Week 1
     if (stype === 4) { stype = 3; week = 5; }                       // offseason -> last season's Super Bowl
     if (stype === 3 && week === 4) week = 5;                        // Pro Bowl week -> Super Bowl
-    const cur = { key: `${season}-${stype}-${week}`, season, at: now() };
+    let key = `${season}-${stype}-${week}`;
+    // ESPN keeps showing a finished week until about Wednesday. Once every game in it is final, move on to the next week.
+    try {
+      const weeks = seasonWeeks(season);
+      for (let i = weeks.findIndex(w => w.key === key); i >= 0 && i < weeks.length - 1; i++) {
+        const row = await ensureWeek(env, weeks[i].key);
+        if (!(row && row.all_final)) break;
+        key = weeks[i + 1].key;
+      }
+    } catch { /* keep ESPN's week */ }
+    const cur = { key, season, at: now() };
     await env.DB.prepare(`INSERT INTO meta (k, v) VALUES ('current', ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`).bind(JSON.stringify(cur)).run();
     return cur;
   } catch (e) {
