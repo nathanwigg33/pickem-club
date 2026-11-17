@@ -3,7 +3,7 @@
 // Data lives in the D1 database bound as DB. NFL schedule and scores come from ESPN's public scoreboard feed.
 //
 // Rules: pick the winner of every game (or a tie). Right winner = 1 point, wrong = 0,
-// picked a tie and the game ties = 10 points. Each game's pick locks 24 hours before that
+// picked a tie and the game ties = 10 points. Each game's pick locks 4 hours before that
 // game kicks off. Other players' picks stay hidden until that game is final, then they're revealed
 // and the points count toward the standings right away.
 
@@ -11,7 +11,7 @@ const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 const ESPN_STATS = 'https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/statistics/byteam';
 const POINTS_WIN = 1, POINTS_TIE = 10;
 const DAY = 86400000;
-const LOCK_BEFORE = 24 * 3600000;   // picks close this long before each kickoff
+const LOCK_BEFORE = 4 * 3600000;    // picks close this long before each kickoff
 
 // ---------- season layout ----------
 // Regular season weeks 1-18 (ESPN seasontype 2), then the playoffs (seasontype 3).
@@ -219,7 +219,7 @@ async function ensureWeek(env, key, { force = false } = {}) {
   return row;
 }
 
-// A game locks 24h before its kickoff. A week is fully locked once its last game has locked.
+// A game locks 4h before its kickoff. A week is fully locked once its last game has locked.
 const gameLocked = g => !!(g && g.kickoff && now() >= g.kickoff - LOCK_BEFORE);
 // ---------- team stats ----------
 // One request returns every team's season stats (theirs and their opponents'). We work out the league ranks ourselves.
@@ -729,7 +729,7 @@ async function api(req, env, url) {
     if (!g) return bad('Game not found.');
     await ensureWeek(env, g.week_key);   // refresh in case the kickoff time moved
     const fresh = await env.DB.prepare(`SELECT * FROM games WHERE id=?`).bind(g.id).first();
-    if (gameLocked(fresh)) return bad(`${fresh.away_abbr} @ ${fresh.home_abbr} is locked. Picks close 24 hours before kickoff.`, 409);
+    if (gameLocked(fresh)) return bad(`${fresh.away_abbr} @ ${fresh.home_abbr} is locked. Picks close 4 hours before kickoff.`, 409);
     const pick = b.pick === null || b.pick === '' ? null : String(b.pick);
     if (pick === null) {
       await env.DB.prepare(`DELETE FROM picks WHERE user_id=? AND game_id=?`).bind(user.id, g.id).run();

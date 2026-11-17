@@ -568,7 +568,7 @@ async function renderPicks(main, lg, key) {
     const split = d.league?.split || {};
     main.innerHTML = weekBar(lg, w, 'picks') + banner + counted +
       groupByDay(d.games).map(gr => `<div class="day">${esc(gr.d)}</div>` + gr.games.map(g => gameCard(g, d.myPicks[g.id], isGameLocked(g), split[g.id])).join('')).join('') +
-      (total && !lockedNow ? `<p class="small muted" style="text-align:center;margin:18px 0">Picks save as you tap. Tap a pick again to clear it.<br>Each game closes 24 hours before kickoff.${d.games.some(g => g.oddsProvider) ? `<br>Lines from ${esc(d.games.find(g => g.oddsProvider).oddsProvider)}, refreshed every few minutes.` : ''}</p>` : '');
+      (total && !lockedNow ? `<p class="small muted" style="text-align:center;margin:18px 0">Picks save as you tap. Tap a pick again to clear it.<br>Each game closes 4 hours before kickoff.${d.games.some(g => g.oddsProvider) ? `<br>Lines from ${esc(d.games.find(g => g.oddsProvider).oddsProvider)}, refreshed every few minutes.` : ''}</p>` : '');
   };
   draw();
   main.onclick = async e => {
@@ -623,7 +623,7 @@ async function renderResults(main, lg, key) {
   resultsPoll(lg, w, d.games);
   if (!L.anyDone) {
     const total = d.games.length;
-    html += `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>No games are final yet</b><div class="t">${w.locked ? 'All picks are locked.' : 'Each game closes 24 hours before kickoff.'} As soon as a game ends, everyone's pick for it shows up here and the leaderboard updates.</div></div></div>`;
+    html += `<div class="banner lock"><div class="ic">${ICON.lock}</div><div><b>No games are final yet</b><div class="t">${w.locked ? 'All picks are locked.' : 'Each game closes 4 hours before kickoff.'} As soon as a game ends, everyone's pick for it shows up here and the leaderboard updates.</div></div></div>`;
     html += `<section class="sec"><h2>Who's in</h2><div class="card" style="padding:4px 16px">${L.players.map(p => {
       const st = p.picked >= total ? `<span class="status ok">✓ All ${total} picked</span>` : p.picked ? `<span class="status part">${p.picked} of ${total}</span>` : `<span class="status none">${w.locked ? 'No picks' : 'Not yet'}</span>`;
       return `<div class="mem"><div class="av">${esc(initials(p.display))}</div><div class="nm"><b>${esc(p.display)}</b>${p.id === S.me.id ? '<span class="you">You</span>' : ''}</div>${st}</div>`;
@@ -806,7 +806,7 @@ async function renderLeague(main, lg) {
     <section class="sec"><h2>How scoring works</h2><div class="card small"><ul class="rl" style="margin:0">
       <li>Pick the winner of every game each week, or pick a <b>tie</b>.</li>
       <li>Right winner: <b>1 point</b>. Wrong: <b>0</b>. Picked a tie and it ties: <b style="color:var(--gold)">10 points</b>.</li>
-      <li>You can pick each game until <b>24 hours before it kicks off</b>. After that it's locked. No pick = 0.</li>
+      <li>You can pick each game until <b>4 hours before it kicks off</b>. After that it's locked. No pick = 0.</li>
       <li>Nobody can see anyone else's pick for a game until <b>that game is over</b>. Then it shows up on Results and the points count right away.</li>
       <li>Weekly winner has the most points that week. The season champion has the most points after the Super Bowl.</li>
       <li>Your picks count in every league you're in.</li></ul></div></section>
