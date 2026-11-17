@@ -811,15 +811,13 @@ async function renderLeague(main, lg) {
       <li>Weekly winner has the most points that week. The season champion has the most points after the Super Bowl.</li>
       <li>Your picks count in every league you're in.</li></ul></div></section>
     ${L.isOwner ? `<section class="sec"><h2>Points from earlier</h2><form class="card stack" id="cy">
-      <p class="small muted" style="margin:0">Already been playing this season? Enter each player's total points so far and which weeks that total covers. The app counts their picks starting the week after. For someone joining late, set their weeks later.</p>
-      ${d.members.map(x => {
-        const lo = Math.max(0, L.start.idx - 1), hi = Math.max(lo, L.currentIdx || lo);
-        const opts = []; for (let i = lo; i <= hi; i++) opts.push(`<option value="${i}" ${i === x.carryThrough ? 'selected' : ''}>${i === 0 ? 'No earlier weeks' : 'Covers ' + esc(throughLabel(i, L.weeks))}</option>`);
-        return `<div class="row" style="align-items:flex-start"><div class="av" style="margin-top:4px">${esc(initials(x.display))}</div>
-          <div style="flex:1;min-width:0"><label style="display:block;font-weight:600;margin:2px 0 6px" for="cy${x.id}">${esc(x.display)}</label>
-            <select class="in" data-thru="${x.id}" aria-label="Weeks ${esc(x.display)}'s points cover" style="height:40px;font-size:14px;padding:0 10px">${opts.join('')}</select></div>
-          <input class="in" id="cy${x.id}" data-uid="${x.id}" type="number" inputmode="numeric" min="0" step="1" value="${x.carry || 0}" style="width:84px;text-align:right;font-weight:700;margin-top:26px;height:40px" aria-label="Points"></div>`;
-      }).join('')}
+      <p class="small muted" style="margin:0">Already been playing this season? Enter each player's total points so far and the last week that total includes. The app counts their picks starting the week after.</p>
+      <div class="row small muted" style="font-weight:600;margin-bottom:-4px"><span style="flex:1;padding-left:44px">Player</span><span style="width:96px;text-align:center">Through week</span><span style="width:84px;text-align:right">Points</span></div>
+      ${d.members.map(x => `<div class="row"><div class="av">${esc(initials(x.display))}</div>
+          <label style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" for="cy${x.id}">${esc(x.display)}</label>
+          <div style="width:96px"><input class="in" data-thru="${x.id}" type="number" inputmode="numeric" min="${Math.max(0, L.start.idx - 1)}" max="22" step="1" value="${x.carryThrough}" style="height:40px;padding:0 6px;text-align:center;font-weight:700" aria-label="${esc(x.display)}'s points cover through week"></div>
+          <input class="in" id="cy${x.id}" data-uid="${x.id}" type="number" inputmode="numeric" min="0" step="1" value="${x.carry || 0}" style="width:84px;text-align:right;font-weight:700;height:40px" aria-label="${esc(x.display)}'s points"></div>`).join('')}
+      <p class="small muted" style="margin:0">Example: a friend who joins before Week 13 gets their total through week <b style="color:var(--text)">12</b>, and the app counts their picks from Week 13 on. The week can't be earlier than ${L.start.idx - 1 > 0 ? `<b style="color:var(--text)">${L.start.idx - 1}</b>, since ${esc(L.name)} starts counting at ${esc(L.start.label)}` : 'the league start'}. Playoffs count as weeks 19–22.</p>
       <button class="btn block">Save points</button></form></section>
       <section class="sec"><h2>Commissioner</h2><div class="card stack">
       <form id="sw" class="stack"><div><label class="f" for="swk">First week that counts for everyone</label>
@@ -841,7 +839,9 @@ async function renderLeague(main, lg) {
     e.preventDefault();
     const points = {}, through = {};
     e.target.querySelectorAll('input[data-uid]').forEach(i => points[i.dataset.uid] = i.value === '' ? 0 : i.value);
-    e.target.querySelectorAll('select[data-thru]').forEach(sl => through[sl.dataset.thru] = sl.value);
+    const minW = Math.max(0, L.start.idx - 1); let badWk = null;
+    e.target.querySelectorAll('input[data-thru]').forEach(i => { const v = i.value === '' ? minW : Math.round(+i.value); if (!(v >= minW && v <= 22)) badWk = i; through[i.dataset.thru] = v; });
+    if (badWk) { badWk.focus(); return toast(`Enter a week from ${minW} to 22.`, 1); }
     try { await api(`leagues/${L.id}/carry`, { points, through }); S.league = null; toast('Points saved. Check Standings.'); } catch (er) { toast(er.message, 1); }
   };
   if ($('#sw')) $('#sw').onsubmit = async e => {
