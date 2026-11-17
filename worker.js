@@ -86,10 +86,33 @@ async function ensureSchema(env) {
 }
 
 // ---------- ESPN sync ----------
+const BROWSER_HEADERS = {
+  'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  'accept': 'application/json, text/plain, */*', 'referer': 'https://www.espn.com/', 'origin': 'https://www.espn.com',
+};
+const ESPN_HOSTS = [ESPN, 'https://site.web.api.espn.com/apis/site/v2/sports/football/nfl'];
 async function espn(env, path) {
-  const r = await fetch((env.ESPN_BASE || ESPN) + path, { headers: { 'user-agent': 'Pickoff/1.0' }, cf: { cacheTtl: 30 } });
+  const r = await fetch((env.ESPN_BASE || ESPN) + path, { headers: BROWSER_HEADERS });
   if (!r.ok) throw new Error('ESPN ' + r.status);
   return r.json();
+}
+// The scoreboard for one week. ESPN has been seen sending placeholder dates (1/31/1993) to servers,
+// so if most kickoff times look wrong, try the other ESPN address and a cache-busting request.
+async function espnWeek(env, path, season) {
+  const bad = d => { const ev = d.events || []; return ev.length > 0 && ev.filter(e => !validKick(Date.parse(e.date || e.competitions?.[0]?.date), season)).length > ev.length / 2; };
+  const tries = env.ESPN_BASE ? [env.ESPN_BASE + path] : [ESPN + path, ESPN_HOSTS[1] + path, ESPN + path + '&_=' + Date.now(), ESPN_HOSTS[1] + path + '&lang=en&region=us&_=' + Date.now()];
+  let first = null, lastErr = null;
+  for (const u of tries) {
+    try {
+      const r = await fetch(u, { headers: BROWSER_HEADERS });
+      if (!r.ok) { lastErr = new Error('ESPN ' + r.status); continue; }
+      const d = await r.json();
+      if (!bad(d)) return d;
+      first ||= d;
+    } catch (e) { lastErr = e; }
+  }
+  if (first) return first;     // every try had placeholder dates: use it anyway (bad dates are ignored when saving)
+  throw lastErr || new Error('ESPN unavailable');
 }
 
 // Which week is "now", per ESPN. Cached for 20 minutes.
@@ -192,7 +215,7 @@ async function ensureWeek(env, key, { force = false } = {}) {
   else maxAge = 30 * 60000;
   if (!force && row && t - row.fetched < maxAge) return row;
   try {
-    const d = await espn(env, `/scoreboard?dates=${meta.season}&seasontype=${meta.stype}&week=${meta.week}&limit=100`);
+    const d = await espnWeek(env, `/scoreboard?dates=${meta.season}&seasontype=${meta.stype}&week=${meta.week}&limit=100`, meta.season);
     const games = (d.events || []).map(ev => parseEvent(ev, key)).filter(g => g.id);
     const stmts = games.map(g => env.DB.prepare(
       `INSERT INTO games (id, week_key, kickoff, state, completed, detail, winner,
@@ -232,7 +255,7 @@ async function ensureWeek(env, key, { force = false } = {}) {
 }
 
 // A game locks 4h before its kickoff. A week is fully locked once its last game has locked.
-const gameLocked = g => !!(g && validKick(g.kickoff) && now() >= g.kickoff - LOCK_BEFORE);
+const gameLocked = g => !!(g && ((g.state && g.state !== 'pre') || (validKick(g.kickoff) && now() >= g.kickoff - LOCK_BEFORE)));
 // ---------- team stats ----------
 // One request returns every team's season stats (theirs and their opponents'). We work out the league ranks ourselves.
 const STAT_DEFS = [
